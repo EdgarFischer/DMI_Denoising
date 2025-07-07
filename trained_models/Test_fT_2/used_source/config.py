@@ -36,8 +36,8 @@ num_samples     = 10000
 val_samples     = 2000
 
 from data.transforms import StratifiedPixelSelection
-transform_train = StratifiedPixelSelection(num_masked_pixels=8, window_size=3)
-transform_val   = StratifiedPixelSelection(num_masked_pixels=8, window_size=3)
+transform_train = StratifiedPixelSelection(num_masked_pixels=12, window_size=3)
+transform_val   = StratifiedPixelSelection(num_masked_pixels=12, window_size=3)
 
 batch_size  = 1000
 num_workers = 0
