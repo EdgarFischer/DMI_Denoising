@@ -4,10 +4,10 @@ import os
 TRAIN_METHOD = "n2v"    # <-- setze hier "n2v" oder "p2n"
 
 # ── welche GPU nutzen ────────────────────────────────────────────────────────
-GPU_NUMBER = "2"  
+GPU_NUMBER = "0"  
 
 # ── Run-Identifier mit Datum/Uhrzeit ─────────────────────────────────────────
-RUN_NAME = 'fT_5Layers'
+RUN_NAME = 'xy_newmask'
 
 # ── Basis-Ordner für alle Runs ────────────────────────────────────────────────
 BASE_RUN_DIR = 'trained_models'
@@ -29,24 +29,24 @@ pretrained_ckpt = False #"/workspace/Deuterium_Denosing/trained_models/Test1_fT/
 seed = 42
 train_data = ['P03','P04','P05','P06','P07']
 val_data   = ['P08']
-image_axes = (3, 4)
+image_axes = (0, 1)
 fixed_indices   = None
-fourier_transform_axes = [3]
+fourier_transform_axes = []
 num_samples     = 10000
 val_samples     = 2000
 
 from data.transforms import StratifiedPixelSelection
-transform_train = StratifiedPixelSelection(num_masked_pixels=300, window_size=5)
-transform_val   = StratifiedPixelSelection(num_masked_pixels=300, window_size=5)
+transform_train = StratifiedPixelSelection(num_masked_pixels=8, window_size=3)
+transform_val   = StratifiedPixelSelection(num_masked_pixels=8, window_size=3)
 
-batch_size  = 500
+batch_size  = 2000
 num_workers = 0
 pin_memory  = False
 
 in_channels   = 2
 out_channels  = 2
-features      = (32, 64, 128, 256, 512)
+features      = (32, 64, 128)
 
 lr           = 2e-5
-epochs       = 1000
+epochs       = 500
 
