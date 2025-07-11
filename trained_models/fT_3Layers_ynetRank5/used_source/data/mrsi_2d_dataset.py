@@ -1,4 +1,4 @@
-# data/mrsi_2d_dataset.py
+# data/mrsi_nd_dataset.py
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -69,3 +69,5 @@ class MRSiNDataset(Dataset):
             torch.from_numpy(tgt),                      # (2, H, W)
             torch.from_numpy(mask.astype(np.float32))[None],  # (1, H, W)
         )
+
+

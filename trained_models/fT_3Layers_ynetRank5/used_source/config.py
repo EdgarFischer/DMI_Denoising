@@ -1,23 +1,15 @@
-import os
 # ───────────────────────── config.py (NEU) ─────────────────────────
-# ------------------------------------------------------------------
-# Modell / Training
-# ------------------------------------------------------------------
-TRAIN_METHOD  = "n2v"        #  n2v | p2n | ynet
-UNET_DIM      = "3d"         #  2d  | 3d          ←  NEU
+import os
 
-# Mappe Dimensionalität → Trainer‐Modul + Funktion
-_TRAINER_MAP = {
-    ("n2v", "2d"): ("train.trainer_n2v",  "train_n2v"),
-    ("n2v", "3d"): ("train.trainer_n2v_3D",    "train_n2v_3d"),
-    ("p2n", "2d"): ("train.trainer_p2n",  "train_p2n"),      # Beispiel
-    ("ynet","2d"): ("train.trainer_ynet", "train_ynet_n2v"),
-}
-TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
+# ── Trainingsmethode ───────────────────────────────────────────────
+#  • "n2v"  -> klassisches Noise2Void (1-Encoder U-Net)
+#  • "ynet" -> zweipfadiges Y-Net (Noisy + Low-Rank) n2v
+#  • "p2n"  -> Positive2Negative (unet)
+TRAIN_METHOD = "ynet"
 
 # ── GPU & Run-Ordner ───────────────────────────────────────────────
-GPU_NUMBER = "3"
-RUN_NAME   = "fT_3Layers_3D"
+GPU_NUMBER = "0"
+RUN_NAME   = "fT_3Layers_ynetRank5"
 BASE_RUN_DIR = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -34,23 +26,15 @@ seed = 42
 train_data = ["P03","P04","P05","P06","P07"]
 val_data   = ["P08"]
 
-image_axes  = (3, 4)          # (Spektrum, Zeit) 
-volume_axes  = (2, 3, 4)          # (Spektrum, Zeit) 
+image_axes  = (3, 4)          # (Spektrum, Zeit)
 fixed_indices   = None
 fourier_transform_axes = [3]  # FFT über Zeit
-num_samples = 5000
-val_samples = 1000
+num_samples = 10000
+val_samples = 2000
 
-# FOR 2D Network (uncomment if you train 3D !)
-# from data.transforms import StratifiedPixelSelection
-# transform_train = StratifiedPixelSelection(num_masked_pixels=264, window_size=3)
-# transform_val   = StratifiedPixelSelection(num_masked_pixels=264, window_size=3)
-
-# FOR 3D Network (uncomment if you train 2D !)
-
-from data.transforms_3d import StratifiedVoxelSelection as StratifiedTransform
-transform_train = StratifiedTransform(num_masked_voxels=264, window_size=3)
-transform_val   = StratifiedTransform(num_masked_voxels=264, window_size=3)  # oder ebenfalls StratifiedTransform
+from data.transforms import StratifiedPixelSelection
+transform_train = StratifiedPixelSelection(num_masked_pixels=12, window_size=3)
+transform_val   = StratifiedPixelSelection(num_masked_pixels=12, window_size=3)
 
 batch_size  = 500
 num_workers = 0
@@ -65,7 +49,7 @@ features     = (32, 64, 128)
 # Y-Net-spezifisch (werden nur verwendet, wenn TRAIN_METHOD == \"ynet\")
 in_channels_noisy = 2      # Real + Imag
 in_channels_lr    = 2      # Real + Imag
-lowrank_rank      = 3     # Truncation-Rank für SVD
+lowrank_rank      = 5     # Truncation-Rank für SVD
 
 # ── Optimierung ────────────────────────────────────────────────────
 lr     = 2e-5

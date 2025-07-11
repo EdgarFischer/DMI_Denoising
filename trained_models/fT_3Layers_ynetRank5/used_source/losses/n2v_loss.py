@@ -8,9 +8,9 @@ def masked_mse_loss(
     mask: torch.Tensor
 ) -> torch.Tensor:
     """
-    MSE nur auf maskierten Voxel-/Pixel-Kanal-Paaren:
-    output, target: (B, C, *spatial)  e.g. (B, C, D, H, W)
-    mask:           (B, 1, *spatial)  e.g. (B, 1, D, H, W)
+    MSE nur auf maskierten Pixel-Kanal-Paaren:
+    output, target: (B, C, H, W)
+    mask:           (B, 1, H, W)
     """
 
     # 1) Quadrierter Fehler
