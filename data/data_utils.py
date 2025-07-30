@@ -32,7 +32,9 @@ def load_and_preprocess_data(
         if normalize:
             maxv = np.max(np.abs(arr))
             if maxv > 0:
+                print(f"Max vor Normierung: {maxv}")
                 arr = arr / maxv
+                print(f"Max nach Normierung: {np.max(np.abs(arr))}")
 
         # 2) Fourieranalyse
         if fourier_axes:
