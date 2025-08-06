@@ -154,6 +154,62 @@ class StratifiedPixelSelection3D:
                         mask_noisy[:, z, i_f, j_t] = True
 
         return inp, tgt, mask_noisy
+    
+# data/transforms_3d.py
+import numpy as np
+from typing import List
+
+# ----------------------------------------------------------------------
+# NEU: 1-D-Maskierung entlang der F-Achse, repliziert über (X,Y)
+# ----------------------------------------------------------------------
+class StratifiedFreqSelection3D:
+    """
+    Noise2Void-Maske für (x,y,f)-Netz:
+
+    • Eingabe-Shape (C, X, Y, F)
+    • Es werden *einzelne Frequenzen* maskiert
+    • Die gewählte f-Position gilt für **alle (x,y)**
+    • Stratifikation: F in gleich breite Tiles aufteilen
+    """
+
+    def __init__(self, num_masked_freq: int = 32):
+        self.N = int(num_masked_freq)
+
+    # ---------------------------
+    def __call__(self, img: np.ndarray):
+        if img.ndim != 4:
+            raise ValueError("Erwarte 4D-Array (C,X,Y,F)")
+
+        C, X, Y, F = img.shape
+        tgt  = img.copy()
+        inp  = img.copy()
+        mask = np.zeros((C if C == 2 else 2, X, Y, F), dtype=bool)
+
+        # -------- stratifiziert F wählen ----------
+        tile = max(1, F // self.N)
+        freqs: List[int] = []
+        for start in range(0, F, tile):
+            if len(freqs) >= self.N:
+                break
+            end = min(start + tile, F)
+            freqs.append(np.random.randint(start, end))
+        # falls zu wenig, random auffüllen
+        while len(freqs) < self.N:
+            freqs.append(np.random.randint(0, F))
+
+        # --------------- maskieren -----------------
+        for f in freqs:
+            # Nachbar-Freq auswählen (≠ f)
+            while True:
+                ff = np.random.randint(0, F)
+                if ff != f:
+                    break
+            # swap für alle (x,y) auf einmal
+            inp[..., f] = img[..., ff]
+            mask[..., f] = True
+
+        return inp, tgt, mask
+
 
 
 

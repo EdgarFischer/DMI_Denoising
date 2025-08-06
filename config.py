@@ -20,10 +20,23 @@ supervised_to_lowrank = False
 phase_prob = 1.0  # data augmentation probabiliy with random global phase 
 
 # ---------------------------------------------------------------------------
+# 1a) Trainer-Mapping  (NEU: 3-D-Einträge)
+# ---------------------------------------------------------------------------
+_TRAINER_MAP = {
+    ("n2v", "2d"): ("train.trainer_n2v", "train"),
+    ("n2s", "2d"): ("train.trainer_n2v", "train"),
+    ("n2v", "3d"): ("train.trainer3d",   "train"),   # ← NEU
+    ("n2s", "3d"): ("train.trainer3d",   "train"),   # ← NEU
+    # weitere Einträge unverändert …
+}
+
+TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
+
+# ---------------------------------------------------------------------------
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
-GPU_NUMBER = "1"
-RUN_NAME   = "zfT"
+GPU_NUMBER = "0"
+RUN_NAME   = "(xyz)fT"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -57,7 +70,7 @@ if SELF_SUPERVISED_MODE == "n2v":
     if UNET_DIM == "2d":
         from data.transforms import StratifiedPixelSelection
         transform_train = StratifiedPixelSelection(
-            num_masked_pixels=12,
+            num_masked_pixels=15,
             window_size=3,
             random_mask_low_rank=False,
             random_mask_noisy=False,
@@ -97,7 +110,7 @@ else:
 # ---------------------------------------------------------------------------
 # 5) Netzwerk-Hyper­parameter
 # ---------------------------------------------------------------------------
-batch_size  = 1500
+batch_size  = 80
 num_workers = 0
 pin_memory  = False
 
@@ -113,19 +126,6 @@ epochs = 2000
 pretrained_ckpt = ""   # path/to/ckpt.pt
 pretrained_strict = True
 load_optimizer_from_pretrained = False
-
-# ---------------------------------------------------------------------------
-# 1a) Trainer-Mapping  (NEU: 3-D-Einträge)
-# ---------------------------------------------------------------------------
-_TRAINER_MAP = {
-    ("n2v", "2d"): ("train.trainer_n2v", "train"),
-    ("n2s", "2d"): ("train.trainer_n2v", "train"),
-    ("n2v", "3d"): ("train.trainer3d",   "train"),   # ← NEU
-    ("n2s", "3d"): ("train.trainer3d",   "train"),   # ← NEU
-    # weitere Einträge unverändert …
-}
-
-TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 
 
 
