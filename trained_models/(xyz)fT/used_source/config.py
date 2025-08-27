@@ -110,7 +110,7 @@ else:
 # ---------------------------------------------------------------------------
 # 5) Netzwerk-Hyper­parameter
 # ---------------------------------------------------------------------------
-batch_size  = 80
+batch_size  = 125
 num_workers = 0
 pin_memory  = False
 
@@ -119,8 +119,13 @@ out_channels  = 2
 features      = (32, 64, 128, 256, 512)             # 2-D-UNet
 features_3d   = (32, 64, 128, 256, 512)              # 3-D-UNet  ← neu
 
-lr     = 2e-5
-epochs = 2000
+# ---- Hyper­parameter ------------------------------------
+init_lr   = 2e-3          # Anfangs learning rate
+factor    = 0.25          # alle 150 Epochen /4
+step_size = 150           #  
+min_lr    = 2e-5          # learnign rate wir nie niedriger als das
+
+epochs = 1000
 
 # Vortrainiertes Modell (optional)
 pretrained_ckpt = ""   # path/to/ckpt.pt

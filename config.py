@@ -8,7 +8,7 @@ SELF_SUPERVISED_MODE = "n2v"          #  n2v | n2s
 # ---------------------------------------------------------------------------
 # 1) Architektur / Trainer
 # ---------------------------------------------------------------------------
-UNET_DIM     = "3d"                   #  2d | 3d
+UNET_DIM     = "2d"                   #  2d | 3d
 TRAIN_METHOD = "n2v"                  #  n2v | n2s | …
 
 lowrank_rank = 20
@@ -36,7 +36,7 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
 GPU_NUMBER = "0"
-RUN_NAME   = "(xyz)fT"
+RUN_NAME   = "Sim_Lesion_fT_1MaskedPoint"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -47,8 +47,8 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = [f"P0{i}" for i in range(3, 8)]
-val_data   = ["P08"]
+train_data = [f"Simulated_Lesion_{i}" for i in range(1, 6)]
+val_data   = ["Simulated_Lesion_6"]
 
 # --- Achsen‐Definition ------------------------------------------------------
 if UNET_DIM == "2d":
@@ -60,8 +60,8 @@ else:                             # 3-D-Netz
 
 fourier_transform_axes = [3]      # FFT über FID-Achse (t)
 fixed_indices = None
-num_samples   = 2000
-val_samples   = 400
+num_samples   = 10000
+val_samples   = 2000
 
 # ---------------------------------------------------------------------------
 # 4) Maskierung
@@ -70,7 +70,7 @@ if SELF_SUPERVISED_MODE == "n2v":
     if UNET_DIM == "2d":
         from data.transforms import StratifiedPixelSelection
         transform_train = StratifiedPixelSelection(
-            num_masked_pixels=15,
+            num_masked_pixels=12,
             window_size=3,
             random_mask_low_rank=False,
             random_mask_noisy=False,
@@ -110,7 +110,7 @@ else:
 # ---------------------------------------------------------------------------
 # 5) Netzwerk-Hyper­parameter
 # ---------------------------------------------------------------------------
-batch_size  = 80
+batch_size  = 1000  #160
 num_workers = 0
 pin_memory  = False
 
@@ -119,13 +119,35 @@ out_channels  = 2
 features      = (32, 64, 128, 256, 512)             # 2-D-UNet
 features_3d   = (32, 64, 128, 256, 512)              # 3-D-UNet  ← neu
 
-lr     = 2e-5
-epochs = 2000
+# ---- Hyper­parameter ------------------------------------
+init_lr   = 1e-3          # Anfangs learning rate
+factor    = 0.5          # alle 150 Epochen /4
+step_size = 50           # so oft wird die learning rate angepasst 
+min_lr    = 2e-5          # learnign rate wir nie niedriger als das
+
+# ───────────────────────────────
+# Laktat-Gewicht (Curriculum)
+# ───────────────────────────────
+def lact_weight(epoch: int) -> float:
+    if epoch < 50: return 10
+    elif epoch < 100: return 8.5
+    elif epoch < 150: return 7
+    elif epoch < 200: return 5.5
+    elif epoch < 250: return 4
+    elif epoch < 300: return 2.5
+
+    else: return 1.0
+
+# ----------------- Frequenz-Bins (inklusive Endindex) ------
+lact_bins = (95, 120)       # 12..16   (an Daten anpassen!)
+
+epochs = 1000
 
 # Vortrainiertes Modell (optional)
 pretrained_ckpt = ""   # path/to/ckpt.pt
 pretrained_strict = True
 load_optimizer_from_pretrained = False
+
 
 
 
