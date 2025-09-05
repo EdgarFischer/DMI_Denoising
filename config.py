@@ -36,7 +36,7 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
 GPU_NUMBER = "0"
-RUN_NAME   = "Sim_Lesion_fT_1MaskedPoint"
+RUN_NAME   = "Sim_Lactate_Oversampled_3"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -47,8 +47,8 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = [f"Simulated_Lesion_{i}" for i in range(1, 6)]
-val_data   = ["Simulated_Lesion_6"]
+train_data = ["Simulated_Lesion_1", "Simulated_Lesion_2", "Simulated_Lesion_3", "Simulated_Lesion_5","Simulated_Lesion_6","Simulated_Lesion_7","Simulated_Lesion_8","Simulated_Lesion_9","Only_Lesion_data_1"]
+val_data   = ["Simulated_Lesion_4"]
 
 # --- Achsen‐Definition ------------------------------------------------------
 if UNET_DIM == "2d":
@@ -129,19 +129,19 @@ min_lr    = 2e-5          # learnign rate wir nie niedriger als das
 # Laktat-Gewicht (Curriculum)
 # ───────────────────────────────
 def lact_weight(epoch: int) -> float:
-    if epoch < 50: return 10
-    elif epoch < 100: return 8.5
-    elif epoch < 150: return 7
-    elif epoch < 200: return 5.5
-    elif epoch < 250: return 4
-    elif epoch < 300: return 2.5
+    if epoch < 50: return 1
+    elif epoch < 100: return 1
+    elif epoch < 150: return 1
+    elif epoch < 200: return 1
+    elif epoch < 250: return 1
+    elif epoch < 300: return 1
 
     else: return 1.0
 
 # ----------------- Frequenz-Bins (inklusive Endindex) ------
 lact_bins = (95, 120)       # 12..16   (an Daten anpassen!)
 
-epochs = 1000
+epochs = 500
 
 # Vortrainiertes Modell (optional)
 pretrained_ckpt = ""   # path/to/ckpt.pt
