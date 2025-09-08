@@ -36,7 +36,7 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
 GPU_NUMBER = "0"
-RUN_NAME   = "Sim_Lactate_Oversampled_3"
+RUN_NAME   = "Simulation_wo_lesion"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -47,8 +47,8 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = ["Simulated_Lesion_1", "Simulated_Lesion_2", "Simulated_Lesion_3", "Simulated_Lesion_5","Simulated_Lesion_6","Simulated_Lesion_7","Simulated_Lesion_8","Simulated_Lesion_9","Only_Lesion_data_1"]
-val_data   = ["Simulated_Lesion_4"]
+train_data = ["Simulated_1", "Simulated_2", "Simulated_3", "Simulated_4", "Simulated_5"]
+val_data   = ["Simulated_6"]
 
 # --- Achsen‐Definition ------------------------------------------------------
 if UNET_DIM == "2d":
@@ -139,7 +139,7 @@ def lact_weight(epoch: int) -> float:
     else: return 1.0
 
 # ----------------- Frequenz-Bins (inklusive Endindex) ------
-lact_bins = (95, 120)       # 12..16   (an Daten anpassen!)
+lact_bins = (2, 4)       # 12..16   (an Daten anpassen!)
 
 epochs = 500
 
