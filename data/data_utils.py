@@ -4,8 +4,7 @@ import numpy as np
 def load_and_preprocess_data(
     folder_names: list,
     base_path: str,
-    fourier_axes: list = None,
-    normalize: bool = True
+    fourier_axes: list = None
 ) -> np.ndarray:
     """
     Lädt jeweils 'data.npy' aus jedem Unterordner in base_path und
@@ -29,12 +28,12 @@ def load_and_preprocess_data(
             arr = arr[..., np.newaxis]  # → (X,Y,Z,t,T,1)
 
         # 1) Normalisieren
-        if normalize:
-            maxv = np.max(np.abs(arr))
-            if maxv > 0:
-                print(f"Max vor Normierung: {maxv}")
-                arr = arr / maxv
-                print(f"Max nach Normierung: {np.max(np.abs(arr))}")
+        # if normalize:
+        #     maxv = np.max(np.abs(arr))
+        #     if maxv > 0:
+        #         print(f"Max vor Normierung: {maxv}")
+        #         arr = arr / maxv
+        #         print(f"Max nach Normierung: {np.max(np.abs(arr))}")
 
         # 2) Fourieranalyse
         if fourier_axes:
