@@ -54,8 +54,7 @@ def prepare_dataset(folders: List[str], transform, num_samples: int):
     data = load_and_preprocess_data(
         folder_names = folders,
         base_path    = "datasets",
-        fourier_axes = config.fourier_transform_axes,
-        normalize    = True,
+        fourier_axes = config.fourier_transform_axes
     )
     return MRSiNDataset(
         data          = data,
@@ -123,12 +122,6 @@ def train():
             except Exception as e:
                 logger.warning(f"Optimizer-State konnte nicht geladen werden: {e}")
 
-    # ─ Lactat-Maske (1,1,H,1) ─────────────────────────────────────────
-    H_dim          = train_ds[0][0].shape[1]          # F-Achse = H
-    l_low, l_high  = config.lact_bins
-    lactat_mask    = torch.zeros(1, 1, H_dim, 1, device=device)
-    lactat_mask[:, :, l_low:l_high, :] = 1            # 1 auf Lactat-Bins
-
     # ─ Checkpoints ─────────────────────────────────────────────────────
     os.makedirs(config.checkpoint_dir, exist_ok=True)
     best_ckpt = os.path.join(config.checkpoint_dir, "best.pt")
@@ -137,9 +130,6 @@ def train():
 
     # ─ Training-Loop ───────────────────────────────────────────────────
     for epoch in range(1, config.epochs + 1):
-        w = config.lact_weight(epoch)
-        weight_map = 1 + (w - 1) * lactat_mask        # (1,1,H,1)
-
         # ---- TRAIN ----------------------------------------------------
         model.train(); running = 0.0
         for inp, tgt, mask_n2v in train_loader:
@@ -149,12 +139,12 @@ def train():
                 mask = sample_n2s_mask(inp[:, :1].shape, p=0.03)
                 inp_masked = inp * (1 - mask)
                 loss = masked_mse_loss(
-                    model(inp_masked), tgt, mask,
-                    weight=weight_map.expand_as(tgt))
+                    model(inp_masked), tgt, mask
+                )
             else:
                 loss = masked_mse_loss(
-                    model(inp), tgt, mask_n2v,
-                    weight=weight_map.expand_as(tgt))
+                    model(inp), tgt, mask_n2v
+                )
 
             optim.zero_grad(); loss.backward()
             tnn_utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -173,20 +163,19 @@ def train():
                     mask = sample_n2s_mask(inp[:, :1].shape, p=0.03)
                     inp_masked = inp * (1 - mask)
                     loss = masked_mse_loss(
-                        model(inp_masked), tgt, mask,
-                        weight=weight_map.expand_as(tgt))
+                        model(inp_masked), tgt, mask
+                    )
                 else:
                     loss = masked_mse_loss(
-                        model(inp), tgt, mask_n2v,
-                        weight=weight_map.expand_as(tgt))
+                        model(inp), tgt, mask_n2v
+                    )
                 running += loss.item() * inp.size(0)
 
         avg_val = running / len(val_loader.dataset)
         scheduler.step()
         current_lr = scheduler.get_last_lr()[0]
 
-        logger.info(f"Epoch {epoch:03d} · train={avg_train:.4e} · val={avg_val:.4e} · "
-                    f"lr={current_lr:.2e} · w={w}")
+        logger.info(f"Epoch {epoch:03d} · train={avg_train:.4e} · val={avg_val:.4e} · lr={current_lr:.2e}")
         print(f"[Ep {epoch:03d}] train={avg_train:.4e} val={avg_val:.4e}")
 
         # ---- Checkpoints ---------------------------------------------
@@ -205,5 +194,4 @@ def train():
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     train()
-
 
