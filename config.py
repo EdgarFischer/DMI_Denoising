@@ -8,7 +8,7 @@ SELF_SUPERVISED_MODE = "n2v"          #  n2v | n2s
 # ---------------------------------------------------------------------------
 # 1) Architektur / Trainer
 # ---------------------------------------------------------------------------
-UNET_DIM     = "2d"                   #  2d | 3d
+UNET_DIM     = "3d"                   #  2d | 3d
 TRAIN_METHOD = "n2v"                  #  n2v | n2s | …
 
 lowrank_rank = 20
@@ -36,7 +36,7 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
 GPU_NUMBER = "0"
-RUN_NAME   = "Tumors_high_LR"
+RUN_NAME   = "Tumors_oversampled_xyzfT_residual"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -60,8 +60,8 @@ else:                             # 3-D-Netz
 
 fourier_transform_axes = [3]      # FFT über FID-Achse (t)
 fixed_indices = None
-num_samples   = 10000
-val_samples   = 2000
+num_samples   = 2000
+val_samples   = 400
 
 # ---------------------------------------------------------------------------
 # 4) Maskierung
@@ -70,14 +70,14 @@ if SELF_SUPERVISED_MODE == "n2v":
     if UNET_DIM == "2d":
         from data.transforms import StratifiedPixelSelection
         transform_train = StratifiedPixelSelection(
-            num_masked_pixels=20,
+            num_masked_pixels=16,
             window_size=3,
             random_mask_low_rank=False,
             random_mask_noisy=False,
             swap_mode=SWAP_MODE,
         )
         transform_val = StratifiedPixelSelection(
-            num_masked_pixels=20,
+            num_masked_pixels=16,
             window_size=3,
             random_mask_low_rank=False,
             random_mask_noisy=False,
@@ -110,7 +110,7 @@ else:
 # ---------------------------------------------------------------------------
 # 5) Netzwerk-Hyper­parameter
 # ---------------------------------------------------------------------------
-batch_size  = 700  #160
+batch_size  = 120  #160
 num_workers = 0
 pin_memory  = False
 
@@ -141,7 +141,7 @@ def lact_weight(epoch: int) -> float:
 # ----------------- Frequenz-Bins (inklusive Endindex) ------
 lact_bins = (95, 120)       # 12..16   (an Daten anpassen!)
 
-epochs = 500
+epochs = 1000
 
 # Vortrainiertes Modell (optional)
 pretrained_ckpt = ""   # path/to/ckpt.pt

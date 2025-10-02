@@ -57,6 +57,8 @@ class UNet3D(nn.Module):
         """
         x : (B, C, Z, H, W)
         """
+        x_in = x  # für Residual-Verbindung
+
         B, C, D, H, W = x.shape
         L      = len(self.pools)       # Anzahl Downsamplings
         factor = 1 << L                # 2**L
@@ -109,6 +111,8 @@ class UNet3D(nn.Module):
               pad_front : pad_front + D,
               pad_top   : pad_top   + H,
               pad_left  : pad_left  + W]
+        
+        #x = x + x_in
 
         return x
 
