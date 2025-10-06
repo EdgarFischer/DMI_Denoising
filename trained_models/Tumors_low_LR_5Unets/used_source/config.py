@@ -36,7 +36,7 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
 GPU_NUMBER = "0"
-RUN_NAME   = "Tumors_high_LR_2DUnet"
+RUN_NAME   = "Tumors_low_LR_5Unets"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -110,7 +110,7 @@ else:
 # ---------------------------------------------------------------------------
 # 5) Netzwerk-Hyper­parameter
 # ---------------------------------------------------------------------------
-batch_size  = 700  #160
+batch_size  = 240  #160
 num_workers = 0
 pin_memory  = False
 
@@ -120,10 +120,10 @@ features      = (32, 64, 128, 256, 512)             # 2-D-UNet
 features_3d   = (32, 64, 128, 256, 512)              # 3-D-UNet  ← neu
 
 # ---- Hyper­parameter ------------------------------------
-init_lr   = 1e-3          # Anfangs learning rate
+init_lr   = 2e-5          # Anfangs learning rate
 factor    = 0.5          # alle 150 Epochen /4
 step_size = 50           # so oft wird die learning rate angepasst 
-min_lr    = 1e-3          # learnign rate wir nie niedriger als das
+min_lr    = 2e-5          # learnign rate wir nie niedriger als das
 
 # ───────────────────────────────
 # Laktat-Gewicht (Curriculum)

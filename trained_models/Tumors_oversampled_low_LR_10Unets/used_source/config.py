@@ -35,8 +35,8 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # ---------------------------------------------------------------------------
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
-GPU_NUMBER = "0"
-RUN_NAME   = "Tumors_high_LR_2DUnet"
+GPU_NUMBER = "1"
+RUN_NAME   = "Tumors_oversampled_low_LR_10Unets"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -47,7 +47,7 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = ["Tumor_1_normalized","Tumor_2_normalized"]
+train_data = ["Tumor_1_normalized", "Tumor_1_normalized", "Tumor_1_normalized", "Tumor_1_normalized","Tumor_2_normalized","Tumor_2_normalized","Tumor_2_normalized","Tumor_2_normalized","Tumor_1_normalized_only_tumor_voxels"]
 val_data   = ["Tumor_1_normalized"]
 
 # --- Achsen‐Definition ------------------------------------------------------
@@ -110,7 +110,7 @@ else:
 # ---------------------------------------------------------------------------
 # 5) Netzwerk-Hyper­parameter
 # ---------------------------------------------------------------------------
-batch_size  = 700  #160
+batch_size  = 120  #160
 num_workers = 0
 pin_memory  = False
 
@@ -120,10 +120,10 @@ features      = (32, 64, 128, 256, 512)             # 2-D-UNet
 features_3d   = (32, 64, 128, 256, 512)              # 3-D-UNet  ← neu
 
 # ---- Hyper­parameter ------------------------------------
-init_lr   = 1e-3          # Anfangs learning rate
+init_lr   = 2e-5          # Anfangs learning rate
 factor    = 0.5          # alle 150 Epochen /4
 step_size = 50           # so oft wird die learning rate angepasst 
-min_lr    = 1e-3          # learnign rate wir nie niedriger als das
+min_lr    = 2e-5          # learnign rate wir nie niedriger als das
 
 # ───────────────────────────────
 # Laktat-Gewicht (Curriculum)

@@ -36,7 +36,7 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
 GPU_NUMBER = "0"
-RUN_NAME   = "Tumors_high_LR_2DUnet"
+RUN_NAME   = "Tumors_oversampled_high_LR"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -47,7 +47,7 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = ["Tumor_1_normalized","Tumor_2_normalized"]
+train_data = ["Tumor_1_normalized", "Tumor_1_normalized", "Tumor_1_normalized", "Tumor_1_normalized","Tumor_2_normalized","Tumor_2_normalized","Tumor_2_normalized","Tumor_2_normalized","Tumor_1_normalized_only_tumor_voxels"]
 val_data   = ["Tumor_1_normalized"]
 
 # --- Achsen‐Definition ------------------------------------------------------

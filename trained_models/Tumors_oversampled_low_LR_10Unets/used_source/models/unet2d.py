@@ -94,7 +94,7 @@ class UNet2D(nn.Module):
         in_channels: int = 2,          # Real + Imag
         out_channels: int = 2,         # Real + Imag
         features: tuple = (64, 128, 256, 512),
-        layers: int = 1,               # Anzahl gestapelter U-Nets
+        layers: int = 10,               # Anzahl gestapelter U-Nets
         learnable_scale: bool = True,  # alpha lernbar?
         init_scale: float = 0.0,       # Initialwert für alpha
     ):

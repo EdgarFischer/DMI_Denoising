@@ -127,7 +127,7 @@ class UNet3D(nn.Module):
                 pad_left1  : pad_left1  + W]
         
         # Residual des 1. Passes
-        x1 = x1 #+ x_in1
+        x1 = x1 + x_in1
 
         # =========================
         # PASS 2 (eigene Gewichte)
