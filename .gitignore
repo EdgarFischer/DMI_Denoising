@@ -31,6 +31,8 @@ events.out.tfevents.*
 *.dat
 *.pdf
 *.tar
+*.txt
+*.log
 #*.png
 
 
