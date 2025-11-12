@@ -9,7 +9,7 @@ SELF_SUPERVISED_MODE = "n2v"          #  n2v | n2s
 # 1) Architektur / Trainer
 # ---------------------------------------------------------------------------
 UNET_DIM     = "2d"                   #  2d | 3d
-TRAIN_METHOD = "n2v"                  #  n2v | n2s | …
+TRAIN_METHOD = "ynet"                  #  n2v | n2s | …
 
 lowrank_rank = 20
 basis_file   = f"datasets/basis_rank{lowrank_rank}.npy"
@@ -25,6 +25,7 @@ phase_prob = 1.0  # data augmentation probabiliy with random global phase
 _TRAINER_MAP = {
     ("n2v", "2d"): ("train.trainer_n2v", "train"),
     ("n2s", "2d"): ("train.trainer_n2v", "train"),
+    ("ynet", "2d"): ("train.trainer_ynet", "train_ynet"),   # ← NEU
     ("n2v", "3d"): ("train.trainer3d",   "train"),   # ← NEU
     ("n2s", "3d"): ("train.trainer3d",   "train"),   # ← NEU
     # weitere Einträge unverändert …
@@ -35,8 +36,8 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # ---------------------------------------------------------------------------
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
-GPU_NUMBER = "0"
-RUN_NAME   = "Tumor_2_normalized_LR50"
+GPU_NUMBER = "2"
+RUN_NAME   = "YNet_Healthy"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -47,8 +48,8 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = ["Tumor_2_normalized_proTLR50"]
-val_data   = ["Tumor_2_normalized_proTLR50"]
+train_data = ["P03_normalized", "P04_normalized", "P05_normalized", "P06_normalized", "P07_normalized"]
+val_data   = ["P08_normalized"]
 
 # --- Achsen‐Definition ------------------------------------------------------
 if UNET_DIM == "2d":
@@ -110,7 +111,7 @@ else:
 # ---------------------------------------------------------------------------
 # 5) Netzwerk-Hyper­parameter
 # ---------------------------------------------------------------------------
-batch_size  = 800  #160
+batch_size  = 650  #160
 num_workers = 0
 pin_memory  = False
 
@@ -148,6 +149,18 @@ pretrained_ckpt = ""   # path/to/ckpt.pt
 pretrained_strict = True
 load_optimizer_from_pretrained = False
 
+##### YNET TEST
 
+# --- Y-Net: separate Pfade für Noisy & LowRank -------------------------------
+# Wenn du erst mal dieselben Ordner wie oben verwenden willst, kannst du sie kopieren:
+train_data_noisy = ["P03_normalized", "P04_normalized", "P05_normalized", "P06_normalized", "P07_normalized"]
+train_data_lr    = ["P03_normalized_tMPPCA_5D", "P04_normalized_tMPPCA_5D", "P05_normalized_tMPPCA_5D", "P06_normalized_tMPPCA_5D", "P07_normalized_tMPPCA_5D"]  # <-- anpassen!
+val_data_noisy   = ["P08_normalized"]
+val_data_lr      = ["P08_normalized_tMPPCA_5D"]  # <-- anpassen!
 
+# Optional (falls vom Default 2 abweichend):
+in_channels_noisy = 2
+in_channels_lr    = 2
 
+train_data = ["P03_normalized_tMPPCA_5D", "P04_normalized_tMPPCA_5D", "P05_normalized_tMPPCA_5D", "P06_normalized_tMPPCA_5D", "P07_normalized_tMPPCA_5D"]
+val_data   = ["P08_normalized_tMPPCA_5D"]

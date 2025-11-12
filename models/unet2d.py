@@ -4,12 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# models/unet2d.py
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
 # ---------- Hilfsbaustein: 2 × Conv(3×3) ----------
 def double_conv(in_ch, out_ch):
     return nn.Sequential(
