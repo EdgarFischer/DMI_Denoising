@@ -6,7 +6,7 @@ import os
 SELF_SUPERVISED_MODE = "n2v"          #  n2v | n2s
 
 # ---------------------------------------------------------------------------
-# 1) Architektur / Trainer 
+# 1) Architektur / Trainer test
 # ---------------------------------------------------------------------------
 UNET_DIM     = "2d"                   #  2d | 3d
 TRAIN_METHOD = "ynet"                  #  n2v | n2s | …
