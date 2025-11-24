@@ -6,7 +6,7 @@ import os
 SELF_SUPERVISED_MODE = "n2v"          #  n2v | n2s
 
 # ---------------------------------------------------------------------------
-# 1) Architektur / Trainer
+# 1) Architektur / Trainer test
 # ---------------------------------------------------------------------------
 UNET_DIM     = "2d"                   #  2d | 3d
 TRAIN_METHOD = "ynet"                  #  n2v | n2s | …
@@ -36,8 +36,8 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # ---------------------------------------------------------------------------
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
-GPU_NUMBER = "2"
-RUN_NAME   = "YNet_Healthy"
+GPU_NUMBER = "0"
+RUN_NAME   = "Ynet_Tumor1_Double_Loss_3"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -48,8 +48,8 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = ["P03_normalized", "P04_normalized", "P05_normalized", "P06_normalized", "P07_normalized"]
-val_data   = ["P08_normalized"]
+# train_data = ["P03_normalized", "P04_normalized", "P05_normalized", "P06_normalized", "P07_normalized"]
+# val_data   = ["P08_normalized"]
 
 # --- Achsen‐Definition ------------------------------------------------------
 if UNET_DIM == "2d":
@@ -153,14 +153,14 @@ load_optimizer_from_pretrained = False
 
 # --- Y-Net: separate Pfade für Noisy & LowRank -------------------------------
 # Wenn du erst mal dieselben Ordner wie oben verwenden willst, kannst du sie kopieren:
-train_data_noisy = ["P03_normalized", "P04_normalized", "P05_normalized", "P06_normalized", "P07_normalized"]
-train_data_lr    = ["P03_normalized_tMPPCA_5D", "P04_normalized_tMPPCA_5D", "P05_normalized_tMPPCA_5D", "P06_normalized_tMPPCA_5D", "P07_normalized_tMPPCA_5D"]  # <-- anpassen!
-val_data_noisy   = ["P08_normalized"]
-val_data_lr      = ["P08_normalized_tMPPCA_5D"]  # <-- anpassen!
+train_data_noisy = ["Tumor_1_normalized"]
+train_data_lr    = ["Tumor_1_normalized_tMPPCA_5D_On_All_Reps"]  # <-- anpassen!
+val_data_noisy   = ["Tumor_1_normalized"]
+val_data_lr      = ["Tumor_1_normalized_tMPPCA_5D_On_All_Reps"]  # <-- anpassen!
 
 # Optional (falls vom Default 2 abweichend):
 in_channels_noisy = 2
 in_channels_lr    = 2
 
-train_data = ["P03_normalized_tMPPCA_5D", "P04_normalized_tMPPCA_5D", "P05_normalized_tMPPCA_5D", "P06_normalized_tMPPCA_5D", "P07_normalized_tMPPCA_5D"]
-val_data   = ["P08_normalized_tMPPCA_5D"]
+# train_data = ["P03_normalized_tMPPCA_5D", "P04_normalized_tMPPCA_5D", "P05_normalized_tMPPCA_5D", "P06_normalized_tMPPCA_5D", "P07_normalized_tMPPCA_5D"]
+# val_data   = ["P08_normalized_tMPPCA_5D"]

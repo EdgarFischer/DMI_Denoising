@@ -28,7 +28,7 @@ assert SELF_SUPERVISED_MODE in ("n2v", "n2s")
 from data.data_utils        import load_and_preprocess_data
 from data.mrsi_y_dataset    import MRSiYDataset
 from data.transforms        import StratifiedPixelSelection  # falls genutzt
-from losses.n2v_loss        import masked_mse_loss
+from losses.n2v_loss        import masked_mse_loss, combined_loss_simple
 from models.ynet2d          import YNet2D
 
 # ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ def prepare_y_dataset(
     )
 
 # ---------------------------------------------------------------------------
-# Noise2Self-Maske
+# Noise2Self-Maske (nur falls n2s benutzt wird)
 # ---------------------------------------------------------------------------
 def sample_n2s_mask(shape, p=0.03):
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -117,18 +117,9 @@ def train_ynet():
         val_ds  , batch_size=config.batch_size, shuffle=False,
         num_workers=config.num_workers, pin_memory=config.pin_memory)
 
-    # ─ Kurzer Loader-/Batch-Check ──────────────────────────────────────
     print(f"[Y-Net] Using device: {'cuda' if torch.cuda.is_available() else 'cpu'}")
     logger.info(f"Train samples (virtual) = {len(train_ds)} · Val samples (virtual) = {len(val_ds)}")
     logger.info(f"Batch size = {config.batch_size} · num_workers = {config.num_workers}")
-
-    try:
-        b_noisy, b_lr, b_tgt, b_mask = next(iter(train_loader))
-        logger.info(f"[Sanity] First batch shapes: noisy={tuple(b_noisy.shape)}, "
-                    f"lr={tuple(b_lr.shape)}, tgt={tuple(b_tgt.shape)}, mask={tuple(b_mask.shape)}")
-    except Exception as e:
-        logger.exception("[Sanity] Batch fetch failed")
-        raise
 
     # ─ Modell / Optimizer / Scheduler ──────────────────────────────────
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -153,7 +144,6 @@ def train_ynet():
     if ckpt_path and os.path.isfile(ckpt_path):
         try:
             ckpt = torch.load(ckpt_path, map_location=device)
-
             strict = getattr(config, "pretrained_strict", True)
             missing, unexpected = model.load_state_dict(ckpt["model_state"], strict=strict)
             logger.info(
@@ -165,7 +155,6 @@ def train_ynet():
             if getattr(config, "load_optimizer_from_pretrained", False) and "optimizer_state" in ckpt:
                 try:
                     optim.load_state_dict(ckpt["optimizer_state"])
-                    # Optimizer-Tensoren auf korrektes device schieben
                     for state in optim.state.values():
                         for k, v in state.items():
                             if isinstance(v, torch.Tensor):
@@ -178,22 +167,35 @@ def train_ynet():
     else:
         logger.info("[Preload] No valid pretrained_ckpt found; skipping.")
 
-    # ─ Optional: kurzer Dry-Run zum frühen OOM-/Form-Check ─────────────
+    # ─ Sanity-Fetch + Dry-Run (mit 5-Tupel) ────────────────────────────
     DO_DRY_RUN = True
     if DO_DRY_RUN:
         try:
+            b_noisy, b_lr, b_tgt, b_mask, b_lr_tgt = next(iter(train_loader))
+            logger.info(f"[Sanity] First batch shapes: "
+                        f"noisy={tuple(b_noisy.shape)}, lr={tuple(b_lr.shape)}, "
+                        f"tgt_noisy={tuple(b_tgt.shape)}, mask={tuple(b_mask.shape)}, "
+                        f"tgt_lr={tuple(b_lr_tgt.shape)}")
+
             model.train()
-            b_noisy = b_noisy.to(device); b_lr = b_lr.to(device)
-            b_tgt   = b_tgt.to(device);   b_mask = b_mask.to(device)
+            b_noisy  = b_noisy.to(device)
+            b_lr     = b_lr.to(device)
+            b_tgt    = b_tgt.to(device)
+            b_mask   = b_mask.to(device)
+            b_lr_tgt = b_lr_tgt.to(device)
+
             pred = model(b_noisy, b_lr)
-            loss = masked_mse_loss(pred, b_tgt, b_mask)
+            loss = combined_loss_simple(
+                y_hat    = pred,
+                x_raw    = b_tgt,      # UNmaskiertes noisy-Target
+                x_tmppca = b_lr_tgt,   # UNmaskiertes lowrank-Target
+                B        = b_mask,
+                alpha    = getattr(config, "alpha_tmppca", 1.0)
+            )
             optim.zero_grad(); loss.backward(); optim.step()
             logger.info(f"[Dry-Run] ok · loss={loss.item():.3e} · batch={b_noisy.size(0)}")
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                logger.error("[Dry-Run] CUDA OOM. Reduziere batch_size oder features.")
-            else:
-                logger.exception("[Dry-Run] Fehler")
+        except Exception as e:
+            logger.exception("[Dry-Run] Fehler")
             raise
 
     # ─ Checkpoints ─────────────────────────────────────────────────────
@@ -207,11 +209,12 @@ def train_ynet():
         try:
             # ---- TRAIN ------------------------------------------------
             model.train(); running = 0.0
-            for noisy, lowrank, tgt, mask_n2v in train_loader:
-                noisy   = noisy.to(device)
-                lowrank = lowrank.to(device)
-                tgt     = tgt.to(device)
-                mask_n2v= mask_n2v.to(device)
+            for noisy, lowrank, tgt, mask_n2v, tgt_lr in train_loader:
+                noisy    = noisy.to(device)
+                lowrank  = lowrank.to(device)
+                tgt      = tgt.to(device)
+                tgt_lr   = tgt_lr.to(device)   # wichtig
+                mask_n2v = mask_n2v.to(device)
 
                 if SELF_SUPERVISED_MODE == "n2s":
                     n2s_mask   = sample_n2s_mask(noisy[:, :1].shape, p=getattr(config, "n2s_p", 0.03))
@@ -220,7 +223,13 @@ def train_ynet():
                     loss = masked_mse_loss(pred, tgt, n2s_mask)
                 else:
                     pred = model(noisy, lowrank)
-                    loss = masked_mse_loss(pred, tgt, mask_n2v)
+                    loss = combined_loss_simple(
+                        y_hat    = pred,
+                        x_raw    = tgt,       # UNmaskiertes noisy-Target
+                        x_tmppca = tgt_lr,    # UNmaskiertes lowrank-Target
+                        B        = mask_n2v,
+                        alpha    = getattr(config, "alpha_tmppca", 1.0)
+                    )
 
                 optim.zero_grad(); loss.backward()
                 tnn_utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -232,11 +241,12 @@ def train_ynet():
             # ---- VALID ------------------------------------------------
             model.eval(); running = 0.0
             with torch.no_grad():
-                for noisy, lowrank, tgt, mask_n2v in val_loader:
-                    noisy   = noisy.to(device)
-                    lowrank = lowrank.to(device)
-                    tgt     = tgt.to(device)
-                    mask_n2v= mask_n2v.to(device)
+                for noisy, lowrank, tgt, mask_n2v, tgt_lr in val_loader:
+                    noisy    = noisy.to(device)
+                    lowrank  = lowrank.to(device)
+                    tgt      = tgt.to(device)
+                    tgt_lr   = tgt_lr.to(device)   # wichtig
+                    mask_n2v = mask_n2v.to(device)
 
                     if SELF_SUPERVISED_MODE == "n2s":
                         n2s_mask   = sample_n2s_mask(noisy[:, :1].shape, p=getattr(config, "n2s_p", 0.03))
@@ -245,9 +255,16 @@ def train_ynet():
                         loss = masked_mse_loss(pred, tgt, n2s_mask)
                     else:
                         pred = model(noisy, lowrank)
-                        loss = masked_mse_loss(pred, tgt, mask_n2v)
+                        loss = combined_loss_simple(
+                            y_hat    = pred,
+                            x_raw    = tgt,       # UNmaskiertes noisy-Target
+                            x_tmppca = tgt_lr,    # UNmaskiertes lowrank-Target
+                            B        = mask_n2v,
+                            alpha    = getattr(config, "alpha_tmppca", 1.0)
+                        )
 
                     running += loss.item() * noisy.size(0)
+
             avg_val = running / len(val_loader.dataset)
             scheduler.step()
             current_lr = scheduler.get_last_lr()[0]
@@ -279,6 +296,7 @@ def train_ynet():
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     train_ynet()
+
 
 
 

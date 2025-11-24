@@ -64,6 +64,3 @@ print(f"[run_train] Starte {module_name}.{func_name} "
 # 6) Training starten
 if __name__ == "__main__":
     train_func()
-
-
-

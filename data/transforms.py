@@ -192,7 +192,7 @@ class StratifiedPixelSelection:
         num_masked_pixels: int = 8,   # Anzahl maskierter Zeitpunkte
         window_size: int = 3,         # ungerade; Radius = win//2
         random_mask_low_rank: bool = False,
-        random_mask_noisy: bool = True,
+        random_mask_noisy: bool = False,
         swap_mode: str = "time",
     ):
         assert window_size % 2 == 1 and window_size >= 3
