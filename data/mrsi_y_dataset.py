@@ -4,16 +4,21 @@ import torch
 from torch.utils.data import Dataset
 from typing import Tuple, Optional, Dict
 
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+from typing import Tuple, Optional, Dict
+
 class MRSiYDataset(Dataset):
     """
     Zweipfad-2D-MRSI-Dataset (Noisy + LowRank), analog zu MRSiNDataset.
 
     Rückgabe pro Sample:
-        inp_noisy : maskiertes Noisy-Bild  (2, H, W)   [Real, Imag]
-        inp_lr    : (ggf. transformiertes) LowRank     (2, H, W)
-        tgt       : Original Noisy                     (2, H, W)
-        mask      : Bool-/Float-Maske pro Noisy-Kanal  (2, H, W)
-                    True/1.0 = Stelle maskiert → Loss dort.
+        inp_noisy : MASKIERTES Noisy (2,H,W)        [Real, Imag]
+        inp_lr    : MASKIERTES LowRank (2,H,W)
+        tgt_noisy : UNMASKIERTES Noisy (2,H,W)
+        mask      : Blind-Spot-Maske für Noisy (2,H,W), True/1.0 = Stelle maskiert
+        tgt_lr    : UNMASKIERTES LowRank (2,H,W)  <-- NEU
     """
     def __init__(
         self,
@@ -23,7 +28,7 @@ class MRSiYDataset(Dataset):
         fixed_indices: Optional[Dict[int, int]] = None,
         transform=None,
         num_samples  : int = 10000,
-        phase_prob   : float = 0.0,   # wie in MRSiNDataset
+        phase_prob   : float = 0.0,
     ):
         assert noisy_data.shape == lowrank_data.shape, \
             "Noisy- und LowRank-Arrays müssen identische Shapes besitzen!"
@@ -56,12 +61,12 @@ class MRSiYDataset(Dataset):
         arr_noisy = self.noisy[tuple(slicer)]
         arr_lr    = self.lr   [tuple(slicer)]
 
-        # --- Optionale gemeinsame globale Phase (wie MRSiNDataset) ----------
+        # --- Optionale gemeinsame globale Phase ------------------------------
         if self.phase_prob > 0 and np.random.rand() < self.phase_prob:
             theta = np.random.rand() * 2 * np.pi
             ph = np.exp(1j * theta).astype(arr_noisy.dtype)
             arr_noisy = arr_noisy * ph
-            arr_lr    = arr_lr    * ph  # gleiche Phase für Konsistenz
+            arr_lr    = arr_lr    * ph  # gleiche Phase
 
         # --- Complex → 2 Kanäle ---------------------------------------------
         def to_2ch(arr: np.ndarray) -> np.ndarray:
@@ -71,25 +76,29 @@ class MRSiYDataset(Dataset):
                 axis=0
             )
 
-        img_noisy = to_2ch(arr_noisy)  # (2,H,W)
-        img_lr    = to_2ch(arr_lr)     # (2,H,W)
+        img_noisy = to_2ch(arr_noisy)  # (2,H,W)  UNMASKIERT
+        img_lr    = to_2ch(arr_lr)     # (2,H,W)  UNMASKIERT
 
-        # Für Transform: wie bisher 4-Kanal-Stack [LR, NOISY]
+        # UNMASKIERTE Targets vor Transform sichern
+        tgt_noisy_2ch = img_noisy.copy()
+        tgt_lr_2ch    = img_lr.copy()
+
+        # Für Transform: 4-Kanal-Stack [LR, NOISY]
         img_comb = np.concatenate([img_lr, img_noisy], axis=0)  # (4,H,W)
         _, H, W  = img_comb.shape
 
         if self.transform is not None:
             inp_comb, tgt_comb, mask = self.transform(img_comb)  # erwartet (4,H,W)
 
-            # Split zurück in Pfade
+            # Split zurück in Pfade (Inputs sind MASKIERT/geswapped)
             inp_lr    = inp_comb[:2]   # (2,H,W)
             inp_noisy = inp_comb[2:]   # (2,H,W)
-            tgt       = tgt_comb[2:]   # (2,H,W) – Ziel ist Original-Noisy
 
-            # Masken-Handhabung (robust):
-            # - Falls (H,W) oder (1,H,W): auf (2,H,W) für Noisy broadcasten
-            # - Falls (2,H,W): direkt nutzen
-            # - Falls (4,H,W): Noisy-Teil nehmen (Kanäle 2..3)
+            # Dein Transform liefert als tgt_comb üblicherweise Originale zurück;
+            # wir verwenden aber explizit die vor dem Transform gesicherten Targets:
+            tgt_noisy = tgt_noisy_2ch
+
+            # Masken-Aufbereitung (auf Noisy-Kanäle normiert)
             if isinstance(mask, np.ndarray):
                 if mask.ndim == 2:
                     mask = np.broadcast_to(mask[None], (2, H, W)).copy()
@@ -99,28 +108,27 @@ class MRSiYDataset(Dataset):
                     elif mask.shape[0] == 2:
                         pass  # ok
                     elif mask.shape[0] == 4:
-                        mask = mask[2:]  # nur Noisy-Kanäle
+                        mask = mask[2:]  # Noisy-Kanäle
                     else:
-                        # Fallback: volle Maske für Noisy
                         mask = np.ones((2, H, W), dtype=bool)
                 else:
                     mask = np.ones((2, H, W), dtype=bool)
             else:
-                # falls Transform z.B. None zurückgibt
                 mask = np.ones((2, H, W), dtype=bool)
 
         else:
             # Kein Transform: Identität + volle Maske
             inp_lr    = img_lr
             inp_noisy = img_noisy
-            tgt       = img_noisy
+            tgt_noisy = img_noisy
             mask      = np.ones((2, H, W), dtype=bool)
 
         return (
-            torch.from_numpy(inp_noisy),                   # (2,H,W)
-            torch.from_numpy(inp_lr),                      # (2,H,W)
-            torch.from_numpy(tgt),                         # (2,H,W)
-            torch.from_numpy(mask.astype(np.float32)),     # (2,H,W)
+            torch.from_numpy(inp_noisy),                   # (2,H,W)  masked noisy (input)
+            torch.from_numpy(inp_lr),                      # (2,H,W)  masked lowrank (input)
+            torch.from_numpy(tgt_noisy),                   # (2,H,W)  UNmasked noisy (target)
+            torch.from_numpy(mask.astype(np.float32)),     # (2,H,W)  blind-spot mask (noisy)
+            torch.from_numpy(tgt_lr_2ch),                  # (2,H,W)  UNmasked lowrank (target)  <-- NEU
         )
 
 

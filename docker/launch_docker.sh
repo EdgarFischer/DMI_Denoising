@@ -22,7 +22,7 @@ if [[ "$ENABLE_GIT" =~ ^[Yy] ]]; then
   docker run -d \
     --gpus all \
     --name mrjo \
-    -p 8888:8888 \
+    -p 7017:8888 \
     -v "${SSH_AUTH_SOCK}:/ssh-agent.sock" \
     -v "${HOME}/.ssh:/home/hostuser/.ssh:ro" \
     -e SSH_AUTH_SOCK=/ssh-agent.sock \
@@ -43,7 +43,7 @@ else
   docker run -d \
     --gpus all \
     --name mrjo \
-    -p 8888:8888 \
+    -p 7017:8888 \
     -v "${WORKSPACE}:/workspace" \
     dl
 
