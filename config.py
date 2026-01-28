@@ -36,8 +36,8 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # ---------------------------------------------------------------------------
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
-GPU_NUMBER = "3"
-RUN_NAME   = "P08_tmppca_xy"
+GPU_NUMBER = "2"
+RUN_NAME   = "Lesion_6"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -48,12 +48,12 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = ["P03_normalized_tMPPCA_5D", "P04_normalized_tMPPCA_5D", "P05_normalized_tMPPCA_5D", "P06_normalized_tMPPCA_5D", "P07_normalized_tMPPCA_5D"]
-val_data   = ["P08_normalized_tMPPCA_5D"]
+train_data = ["Simulated_Lesion_1_normalized_tMPPCA_5D", "Simulated_Lesion_2_normalized_tMPPCA_5D", "Simulated_Lesion_3_normalized_tMPPCA_5D", "Simulated_Lesion_4_normalized_tMPPCA_5D", "Simulated_Lesion_5_normalized_tMPPCA_5D"]
+val_data   = ["Simulated_Lesion_6_normalized_tMPPCA_5D"]
 
 # --- Achsen‐Definition ------------------------------------------------------
 if UNET_DIM == "2d":
-    image_axes  = (0,1) #(3, 4)          # (f , T)
+    image_axes  = (3, 4) #(3, 4)          # (f , T)
     volume_axes = None
 else:                             # 3-D-Netz
     image_axes_3d = (2, 3, 4)     # (Z , f , T)  ← von trainer3d genutzt
@@ -71,14 +71,14 @@ if SELF_SUPERVISED_MODE == "n2v":
     if UNET_DIM == "2d":
         from data.transforms import StratifiedPixelSelection
         transform_train = StratifiedPixelSelection(
-            num_masked_pixels=61,
+            num_masked_pixels=1,
             window_size=3,
             random_mask_low_rank=False,
             random_mask_noisy=False,
             swap_mode=SWAP_MODE,
         )
         transform_val = StratifiedPixelSelection(
-            num_masked_pixels=61,
+            num_masked_pixels=1,
             window_size=3,
             random_mask_low_rank=False,
             random_mask_noisy=False,
