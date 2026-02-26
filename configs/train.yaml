@@ -1,0 +1,33 @@
+run:
+  name: "ABC"
+  base_dir: "trained_models" # this is where you want to save the trained model
+  gpu: "2"
+  seed: 42
+
+data:
+  train: ["sf_brain_DMI_HC_pilot_normalized"]
+  val:   ["sf_brain_DMI_HC_pilot_normalized"]
+
+  image_axes: [3, 4]
+  fourier_axes: [3]
+  num_samples: 10000  # how many voxels are chosen per epoch
+  val_samples: 2000
+
+masking:
+  num_pixels: 1 # this is actually masked repetitions
+  window_size: 3
+
+model:
+  in_channels: 2
+  out_channels: 2
+  features: [32, 64, 128, 256, 512]
+
+optim:
+  lr: 0.001 # intial learning rate
+  factor: 0.5 # learning rate is multiplied by factor after step_size epochs
+  step_size: 50
+  min_lr: 0.00002 # once this learning rate is reached, it is not further reduced
+  epochs: 500
+
+  batch_size: 600
+  num_workers: 0
