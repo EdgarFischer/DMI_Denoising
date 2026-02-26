@@ -69,7 +69,7 @@ val_samples   = 2000
 # ---------------------------------------------------------------------------
 if SELF_SUPERVISED_MODE == "n2v":
     if UNET_DIM == "2d":
-        from data.transforms import StratifiedPixelSelection
+        from denoising.data.transforms import StratifiedPixelSelection
         transform_train = StratifiedPixelSelection(
             num_masked_pixels=1, #61
             window_size=3,
@@ -87,7 +87,7 @@ if SELF_SUPERVISED_MODE == "n2v":
         # Platzhalter, damit Trainer immer ein Attribut findet
         transform_train_3d = transform_val_3d = None
     else:  # 3-D
-        from data.transforms_3d import StratifiedPixelSelection3D
+        from denoising.data.transforms_3d import StratifiedPixelSelection3D
         transform_train_3d = StratifiedPixelSelection3D(
             num_masked_pixels=1017,            # nur (f,T)-Pixels – werden über Z dupliziert
             window_size=3,
