@@ -23,11 +23,11 @@ phase_prob = 1.0  # data augmentation probabiliy with random global phase
 # 1a) Trainer-Mapping  (NEU: 3-D-Einträge)
 # ---------------------------------------------------------------------------
 _TRAINER_MAP = {
-    ("n2v", "2d"): ("train.trainer_n2v", "train"),
-    ("n2s", "2d"): ("train.trainer_n2v", "train"),
-    ("ynet", "2d"): ("train.trainer_ynet", "train_ynet"),   # ← NEU
-    ("n2v", "3d"): ("train.trainer3d",   "train"),   # ← NEU
-    ("n2s", "3d"): ("train.trainer3d",   "train"),   # ← NEU
+    ("n2v", "2d"): ("denoising.training.trainers.trainer_n2v", "train"),
+    ("n2s", "2d"): ("denoising.training.trainers.trainer_n2v", "train"),
+    ("ynet", "2d"): ("denoising.training.trainers.trainer_ynet", "train_ynet"),
+    ("n2v", "3d"): ("denoising.training.trainers.trainer3d", "train"),
+    ("n2s", "3d"): ("denoising.training.trainers.trainer3d", "train"),
     # weitere Einträge unverändert …
 }
 
