@@ -20,24 +20,27 @@ def main():
     os.makedirs(config.log_dir, exist_ok=True)
 
     # 3) Create source snapshot
+        # 3) Create source snapshot
     used_src_dir = os.path.join(config.run_dir, "used_source")
     os.makedirs(used_src_dir, exist_ok=True)
 
     items_to_snapshot = [
-        "config.py",
-        "run_train.py",
-        "train",      # contains trainers
-        "models",
-        "losses",
-        "data",
+        "config.py",          
+        "scripts",           
+        "src/denoising",     
     ]
+
     for item in items_to_snapshot:
         src = os.path.join(REPO_ROOT, item)
         dst = os.path.join(used_src_dir, item)
+
         if os.path.isdir(src):
             shutil.copytree(src, dst, dirs_exist_ok=True)
         elif os.path.isfile(src):
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
+        else:
+            print(f"[snapshot] WARNING: not found: {src}")
 
     # 4) Permissions (optional, e.g. needed on HPC)
     for d in (config.run_dir, config.checkpoint_dir, config.log_dir, used_src_dir):

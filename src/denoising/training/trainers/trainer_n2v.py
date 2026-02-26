@@ -28,8 +28,8 @@ assert SELF_SUPERVISED_MODE in ("n2v", "n2s")
 from denoising.data.data_utils       import load_and_preprocess_data
 from denoising.data.mrsi_2d_dataset  import MRSiNDataset
 from denoising.data.transforms       import StratifiedPixelSelection          # N2V-Maske
-from losses.n2v_loss       import masked_mse_loss
-from models.unet2d         import UNet2D
+from denoising.losses.n2v_loss       import masked_mse_loss
+from denoising.models.unet2d         import UNet2D
 
 # ---------------------------------------------------------------------------
 # Logging
