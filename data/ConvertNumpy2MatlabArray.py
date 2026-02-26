@@ -7,7 +7,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Ordnernamen im datasets ordner mit data.npy dateien angeben die zu .mat konvertiert werden
 
-Ordner_Liste = ['Simulated_Lesion_1_normalized', 'Simulated_Lesion_2_normalized', 'Simulated_Lesion_3_normalized', 'Simulated_Lesion_4_normalized', 'Simulated_Lesion_5_normalized', 'Simulated_Lesion_6_normalized']
+Ordner_Liste = ['sf_brain_DMI_HC_pilot_normalized']
 
 DATA_DIRECTORY = "../datasets/"
 

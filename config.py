@@ -37,7 +37,7 @@ TRAINER_MODULE, TRAIN_FUNC = _TRAINER_MAP[(TRAIN_METHOD, UNET_DIM)]
 # 2) GPU & Ordner (unverändert)
 # ---------------------------------------------------------------------------
 GPU_NUMBER = "2"
-RUN_NAME   = "Lesion_6"
+RUN_NAME   = "sf_brain_DMI_HC_pilot_deep_only"
 BASE_RUN_DIR  = "trained_models"
 
 run_dir        = os.path.join(BASE_RUN_DIR, RUN_NAME)
@@ -48,8 +48,8 @@ log_dir        = os.path.join(run_dir, "logs")
 # 3) Daten-Setup
 # ---------------------------------------------------------------------------
 seed       = 42
-train_data = ["Simulated_Lesion_1_normalized_tMPPCA_5D", "Simulated_Lesion_2_normalized_tMPPCA_5D", "Simulated_Lesion_3_normalized_tMPPCA_5D", "Simulated_Lesion_4_normalized_tMPPCA_5D", "Simulated_Lesion_5_normalized_tMPPCA_5D"]
-val_data   = ["Simulated_Lesion_6_normalized_tMPPCA_5D"]
+train_data = ["sf_brain_DMI_HC_pilot_normalized"]
+val_data   = ["sf_brain_DMI_HC_pilot_normalized"]
 
 # --- Achsen‐Definition ------------------------------------------------------
 if UNET_DIM == "2d":
@@ -71,7 +71,7 @@ if SELF_SUPERVISED_MODE == "n2v":
     if UNET_DIM == "2d":
         from data.transforms import StratifiedPixelSelection
         transform_train = StratifiedPixelSelection(
-            num_masked_pixels=1,
+            num_masked_pixels=1, #61
             window_size=3,
             random_mask_low_rank=False,
             random_mask_noisy=False,

@@ -35,6 +35,7 @@ events.out.tfevents.*
 *.log
 trained_models/
 *.png
+*.jpg
 
 
 # Ignore Jupyter notebook checkpoints

@@ -5,7 +5,7 @@ import os
 # Arbeitsverzeichnis auf aktuelle Datei setzen
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-Ordner_Liste = ['Simulated_Lesion_2_normalized_tMPPCA_5D', 'Simulated_Lesion_3_normalized_tMPPCA_5D', 'Simulated_Lesion_4_normalized_tMPPCA_5D', 'Simulated_Lesion_5_normalized_tMPPCA_5D', 'Simulated_Lesion_6_normalized_tMPPCA_5D']
+Ordner_Liste = ['sf_brain_DMI_HC_pilot_normalized_tMPPCA_5D']
 DATA_DIRECTORY = "../datasets/"
 
 for Ordner in Ordner_Liste:
