@@ -176,7 +176,7 @@ def train(
             logger.warning(f"[DEBUG] Mask debug failed: {e}")
 
     # ----- Model / optim / scheduler -----
-    model = UNet2D(cfg.model.in_channels, cfg.model.out_channels, cfg.model.features).to(device)
+    model = UNet2D(2, 2, cfg.model.features).to(device)
     optim = torch.optim.Adam(model.parameters(), lr=cfg.optim.lr)
 
     def lr_lambda(epoch: int):

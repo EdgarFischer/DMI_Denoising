@@ -27,7 +27,7 @@ class MRSi3DDataset(Dataset):
         fixed_indices: Optional[Dict[int, int]] = None,
         transform=None,
         num_samples: int = 10000,
-        phase_prob: float = 0.0,
+        phase_prob: float = 1.0,
         axis_mode: str = "random",  # 'random' | 'fixed' | 'xyz_only'
         target_len: Optional[int] = None,  # spatial len after padding; None → max(X,Y,Z)
     ):

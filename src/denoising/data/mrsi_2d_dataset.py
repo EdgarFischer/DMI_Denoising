@@ -22,7 +22,7 @@ class MRSiNDataset(Dataset):
         fixed_indices: Optional[Dict[int, int]] = None,
         transform=None,
         num_samples: int = 10000,
-        phase_prob: float = 0,          # <--- neu: Wahrscheinlichkeit für Phase-Jitter
+        phase_prob: float = 1,          # <--- neu: Wahrscheinlichkeit für Phase-Jitter
     ):
         self.data        = data
         self.image_axes  = image_axes

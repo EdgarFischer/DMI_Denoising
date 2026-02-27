@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 from typing import Tuple, List
 
+
 @dataclass(frozen=True)
 class RunCfg:
     name: str
     base_dir: str
     gpu: str
     seed: int
+
 
 @dataclass(frozen=True)
 class DataCfg:
@@ -17,16 +19,18 @@ class DataCfg:
     num_samples: int
     val_samples: int
 
+
 @dataclass(frozen=True)
 class MaskCfg:
+    type: str              # "time1d" | "2d"
     num_pixels: int
     window_size: int
 
+
 @dataclass(frozen=True)
 class ModelCfg:
-    in_channels: int
-    out_channels: int
     features: Tuple[int, ...]
+
 
 @dataclass(frozen=True)
 class OptimCfg:
@@ -37,6 +41,7 @@ class OptimCfg:
     epochs: int
     batch_size: int
     num_workers: int
+
 
 @dataclass(frozen=True)
 class Config:

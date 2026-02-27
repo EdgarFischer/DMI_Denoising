@@ -4,7 +4,6 @@ import sys
 import shutil
 from pathlib import Path
 
-
 def main(cfg, config_path: str | None = None):
     # 1) Switch working directory to repository root
     REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -56,24 +55,36 @@ def main(cfg, config_path: str | None = None):
             pass
 
     # ------------------------------------------------------------------
-    # 5) Build Noise2Void transforms (CRITICAL FOR BLINDSPOT!)
+    # 5) Build N2V transforms based on cfg.mask.type
     # ------------------------------------------------------------------
-    from denoising.data.transforms import StratifiedPixelSelection
-
-    # NOTE:
-    # In your schema this block is called `masking:` in YAML,
-    # and likely `cfg.mask` in the dataclass.
-    # If your schema instead uses `cfg.masking`, change accordingly.
-
-    transform_train = StratifiedPixelSelection(
-        num_masked_pixels=cfg.mask.num_pixels,
-        window_size=cfg.mask.window_size,
+    from denoising.data.transforms import (
+        StratifiedPixelSelection2D,
+        StratifiedPixelSelectionTime1D,
     )
 
-    transform_val = StratifiedPixelSelection(
-        num_masked_pixels=cfg.mask.num_pixels,
-        window_size=cfg.mask.window_size,
-    )
+    m = cfg.mask
+    print(f"[mask] type={m.type} num_pixels={m.num_pixels} window_size={m.window_size}")
+
+    if m.type == "time1d":
+        transform_train = StratifiedPixelSelectionTime1D(
+            num_masked_pixels=m.num_pixels,
+            window_size=m.window_size,
+        )
+        transform_val = StratifiedPixelSelectionTime1D(
+            num_masked_pixels=m.num_pixels,
+            window_size=m.window_size,
+        )
+    elif m.type == "2d":
+        transform_train = StratifiedPixelSelection2D(
+            num_masked_pixels=m.num_pixels,
+            window_size=m.window_size,
+        )
+        transform_val = StratifiedPixelSelection2D(
+            num_masked_pixels=m.num_pixels,
+            window_size=m.window_size,
+        )
+    else:
+        raise ValueError(f"Unknown mask.type: {m.type} (expected 'time1d' or '2d')")
 
     # 6) Import fixed trainer (2D n2v only)
     from denoising.training.trainers.trainer_n2v import train as train_func
