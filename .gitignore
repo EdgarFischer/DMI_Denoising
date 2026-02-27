@@ -37,6 +37,7 @@ trained_models/
 *.png
 *.jpg
 *.m
+src/denoising/data/Tensor-MP-PCA-main/
 
 
 # Ignore Jupyter notebook checkpoints
