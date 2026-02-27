@@ -7,45 +7,35 @@ def load_and_preprocess_data(
     fourier_axes: list = None
 ) -> np.ndarray:
     """
-    Lädt jeweils 'data.npy' aus jedem Unterordner in base_path und
-    stapelt sie entlang der letzten Achse (D). Führt optional FFT und
-    Normierung durch.
-
-    Args:
-      folder_names: Liste von Ordnern unter base_path, z.B. ['P03','P04',...]
-      base_path:    Pfad zu Deinem 'datasets'-Ordner
-      fourier_axes: Liste von Achsen, auf denen np.fft.fft+fftshift angewandt werden soll
-      normalize:    True → jede Teildatenmenge wird auf max(abs)=1 skaliert
-
+    Loads 'data.npy' from each folder under base_path and concatenates along last axis (D).
+    Standard behavior:
+      1) Normalize in the original (FID) domain to max(|.|)=1 per folder.
+      2) Optionally apply FFT (+ fftshift) on specified axes.
     Returns:
-      data: np.ndarray mit Shape (X, Y, Z, t, T, D)
+      data: np.ndarray with shape (X, Y, Z, t/f, T, D)
     """
+
     arrays = []
     for fold in folder_names:
-        fn = os.path.join(base_path, fold, 'data.npy')
-        arr = np.load(fn)               # erwartet Shape (X,Y,Z,t,T)
+        fn = os.path.join(base_path, fold, "data.npy")
+        arr = np.load(fn)  # expected shape (X,Y,Z,t,T)
+
         if arr.ndim == 5:
-            arr = arr[..., np.newaxis]  # → (X,Y,Z,t,T,1)
+            arr = arr[..., np.newaxis]  # -> (X,Y,Z,t,T,1)
 
-        # 1) Normalisieren
-        # if normalize:
-        #     maxv = np.max(np.abs(arr))
-        #     if maxv > 0:
-        #         print(f"Max vor Normierung: {maxv}")
-        #         arr = arr / maxv
-        #         print(f"Max nach Normierung: {np.max(np.abs(arr))}")
+        # 1) STANDARD: normalize in FID domain (before any FFT)
+        maxv = np.max(np.abs(arr))
+        if maxv > 0:
+            arr = arr / maxv
 
-        # 2) Fourieranalyse
+        # 2) FFT (optional)
         if fourier_axes:
             for ax in fourier_axes:
-                # unge-shiftete FFT
                 arr = np.fft.fft(arr, axis=ax)
-                # zentrieren
                 arr = np.fft.fftshift(arr, axes=ax)
 
-        arrays.append(arr)
+        arrays.append(arr.astype(np.complex64, copy=False))
 
-    # 3) Stapeln aller Runs → Shape (X,Y,Z,t,T,D)
     return np.concatenate(arrays, axis=-1)
 
 def low_rank_5d(data, rank):

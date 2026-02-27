@@ -14,7 +14,7 @@ data:
   val_samples: 2000
 
 masking:
-  type: "2d"          # "time1d" or "2d", time1D means repitions wise masking, 2D random stratisfied pixel selection in 2D
+  type: "time1d"          # "time1d" or "2d", time1D means repitions wise masking, 2D random stratisfied pixel selection in 2D
   num_pixels: 1       # careful: for time1D this corresponds to masked repetitions! for 2D this is actual number of pixels
   window_size: 3      # how big is the windows from which neighbors are drawn
 
