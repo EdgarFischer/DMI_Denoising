@@ -13,6 +13,8 @@ data:
   num_samples: 10000  # how many voxels are chosen per epoch
   val_samples: 2000
 
+  normalization: False   # data is automatically normalized
+
 masking:
   type: "time1d"          # "time1d" or "2d", time1D means repitions wise masking, 2D random stratisfied pixel selection in 2D
   num_pixels: 1       # careful: for time1D this corresponds to masked repetitions! for 2D this is actual number of pixels

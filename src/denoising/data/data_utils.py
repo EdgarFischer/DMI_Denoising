@@ -4,7 +4,8 @@ import numpy as np
 def load_and_preprocess_data(
     folder_names: list,
     base_path: str,
-    fourier_axes: list = None
+    fourier_axes: list = None,
+    normalization: bool = True
 ) -> np.ndarray:
     """
     Loads 'data.npy' from each folder under base_path and concatenates along last axis (D).
@@ -24,9 +25,10 @@ def load_and_preprocess_data(
             arr = arr[..., np.newaxis]  # -> (X,Y,Z,t,T,1)
 
         # 1) STANDARD: normalize in FID domain (before any FFT)
-        maxv = np.max(np.abs(arr))
-        if maxv > 0:
-            arr = arr / maxv
+        if normalization:
+            maxv = np.max(np.abs(arr))
+            if maxv > 0:
+                arr = arr / maxv
 
         # 2) FFT (optional)
         if fourier_axes:

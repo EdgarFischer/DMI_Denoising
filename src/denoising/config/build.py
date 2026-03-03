@@ -14,6 +14,7 @@ def build_config(raw: dict) -> Config:
         fourier_axes=tuple(data_raw["fourier_axes"]),
         num_samples=int(data_raw["num_samples"]),
         val_samples=int(data_raw["val_samples"]),
+        normalization=bool(data_raw.get("normalization", True)),
     )
 
     # --- masking ---

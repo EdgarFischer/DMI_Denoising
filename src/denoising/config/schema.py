@@ -18,6 +18,7 @@ class DataCfg:
     fourier_axes: Tuple[int, ...]
     num_samples: int
     val_samples: int
+    normalization: bool
 
 
 @dataclass(frozen=True)

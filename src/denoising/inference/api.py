@@ -168,7 +168,11 @@ def infer(
     in_shape = x_fid.shape
 
     # ---- normalize in FID domain (your convention) ----
-    scale = _normalize_fid_inplace(x_fid)
+    do_norm = bool(getattr(cfg.data, "normalization", True))
+
+    scale = 1.0
+    if do_norm:
+        scale = _normalize_fid_inplace(x_fid)
 
     # ---- forward domain used for network ----
     fourier_axes = list(getattr(cfg.data, "fourier_axes", ()))

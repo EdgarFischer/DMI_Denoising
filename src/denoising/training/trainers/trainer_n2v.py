@@ -48,11 +48,13 @@ def prepare_dataset(
     image_axes,
     fixed_indices,
     phase_prob: float,
+    normalization: bool,
 ):
     data = load_and_preprocess_data(
         folder_names=folders,
         base_path=base_path,
         fourier_axes=list(fourier_axes),
+        normalization=normalization,
     )
     return MRSiNDataset(
         data=data,
@@ -120,6 +122,8 @@ def train(
     phase_prob = getattr(cfg.data, "phase_prob", 1.0)
 
     # ----- Build datasets -----
+    do_norm = getattr(cfg.data, "normalization", True)
+
     train_ds = prepare_dataset(
         folders=list(cfg.data.train),
         transform=transform_train,
@@ -129,6 +133,7 @@ def train(
         image_axes=image_axes,
         fixed_indices=fixed_indices,
         phase_prob=phase_prob,
+        normalization=do_norm, 
     )
     val_ds = prepare_dataset(
         folders=list(cfg.data.val),
@@ -139,6 +144,7 @@ def train(
         image_axes=image_axes,
         fixed_indices=fixed_indices,
         phase_prob=phase_prob,
+        normalization=do_norm,
     )
 
     # ----- Device & dataloaders -----
