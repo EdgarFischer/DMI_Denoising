@@ -66,10 +66,10 @@ def plot_matrix_panel(ax, ppm, specs, time_labels,
 
 
 DEFAULT_COLORS = {
-    "noisy": "#333333",          # dark gray
+    "noisy": "#666666",          # dark gray
     "tMPPCA_5D": "#E69F00",       # orange
     "deep_tMPPCA_5D": "#009E73",  # green
-    "gt": "#000000"              # black (for dashed GT)
+    "gt": "#000000"# "#000000"              # black (for dashed GT)
 }
 
 
@@ -79,17 +79,17 @@ def plot_noisy_vs_methods(
     x=0, y=0, z=0,
     t_idx=(0, 3, 6, 9),
     time_labels=None,
-    titles=("Noisy", "Proposed + GT"),
+    titles=("No denoising", "Proposed"),
     colors=DEFAULT_COLORS,
     dx_ppm_total=0.20,
     add_legend=True,
     anatomy=None,
     anatomy_title="",
-    anatomy_clim=None,          # <<< NEU (z.B. T1_WINDOW)
+    anatomy_clim=None,
 ):
     """
-    Left : Noisy (stacked spectra)
-    Mid  : Method1 (solid) + optional Method2 (dashed, overlay)
+    Left : No denoising (Noisy) + optional GT overlay (Method2, dashed)
+    Mid  : Method1 (solid) + optional GT overlay (Method2, dashed)
     Right: Optional anatomy panel (imshow of 2D array)
 
     Specmaps: (X,Y,Z,F,T)
@@ -105,7 +105,7 @@ def plot_noisy_vs_methods(
     # --- extract spectra ---
     def extract(specmap):
         S = specmap[x, y, z, :, :]
-        return S[:, t_idx].T
+        return S[:, t_idx].T  # (K,F)
 
     noisy_specs = extract(Noisy)
     m1_specs    = extract(Method1)
@@ -125,7 +125,7 @@ def plot_noisy_vs_methods(
         axs_noisy, axs_mid, axs_anat = axs
         fig.subplots_adjust(wspace=0.35)
 
-    # LEFT: Noisy
+    # LEFT: No denoising (Noisy)
     offset = plot_matrix_panel(
         axs_noisy, ppm, noisy_specs, time_labels,
         color=colors["noisy"],
@@ -134,10 +134,24 @@ def plot_noisy_vs_methods(
         zorder=1,
         dx_ppm_total=0.0
     )
+
+    # LEFT: GT overlay (no labels)
+    if m2_specs is not None:
+        plot_matrix_panel(
+            axs_noisy, ppm, m2_specs, [""] * len(time_labels),
+            color=colors["gt"],
+            lw=1.1,
+            linestyle="--",
+            offset=offset,
+            alpha=0.9,
+            zorder=2,
+            dx_ppm_total=0.0
+        )
+
     axs_noisy.set_title(titles[0], fontsize=12)
     axs_noisy.set_xlabel("Chemical shift [ppm]", fontsize=12)
 
-    # MID: Proposed
+    # MID: Method1 (Proposed)
     plot_matrix_panel(
         axs_mid, ppm, m1_specs, time_labels,
         color=colors["deep_tMPPCA_5D"],
@@ -148,10 +162,10 @@ def plot_noisy_vs_methods(
         dx_ppm_total=0.0
     )
 
-    # MID: GT
+    # MID: GT overlay (no labels)
     if m2_specs is not None:
         plot_matrix_panel(
-            axs_mid, ppm, m2_specs, time_labels,
+            axs_mid, ppm, m2_specs, [""] * len(time_labels),
             color=colors["gt"],
             lw=1.1,
             linestyle="--",
@@ -164,12 +178,13 @@ def plot_noisy_vs_methods(
     axs_mid.set_title(titles[1], fontsize=12)
     axs_mid.set_xlabel("Chemical shift [ppm]", fontsize=12)
 
+    # ONE legend only (on the right/mid panel)
     if add_legend and (m2_specs is not None):
         handles = [
             Line2D([0], [0], color=colors["deep_tMPPCA_5D"], lw=1.4, linestyle="-", label="Proposed"),
             Line2D([0], [0], color=colors["gt"], lw=1.1, linestyle="--", label="Ground truth"),
         ]
-        axs_mid.legend(handles=handles, loc="upper left", frameon=False, fontsize=10)
+        axs_mid.legend(handles=handles, loc="upper right", frameon=False, fontsize=10)
 
     # RIGHT: Anatomy panel
     if axs_anat is not None:
