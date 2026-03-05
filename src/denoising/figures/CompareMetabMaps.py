@@ -200,7 +200,7 @@ def plot_metab_maps(
             cax_ratio.yaxis.set_ticks_position("right")
 
     plt.tight_layout(rect=[0,0,0.95,1])
-    plt.savefig('MetabMaps.jpg', dpi=200, bbox_inches='tight')
+    #plt.savefig('MetabMaps.jpg', dpi=200, bbox_inches='tight')
     plt.show()
 
 
@@ -324,5 +324,5 @@ def plot_metab_ratio(
         cax.yaxis.set_ticks_position("right")
 
     plt.tight_layout(rect=[0,0,0.95,1])
-    plt.savefig(f"MetabRatio_{metab1}_{metab2}.jpg", dpi=200, bbox_inches='tight')
+    #plt.savefig(f"MetabRatio_{metab1}_{metab2}.jpg", dpi=200, bbox_inches='tight')
     plt.show()
