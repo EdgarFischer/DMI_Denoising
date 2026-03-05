@@ -32,6 +32,7 @@ events.out.tfevents.*
 *.pdf
 *.tar
 *.txt
+!requirements.txt
 *.log
 trained_models/
 *.png
