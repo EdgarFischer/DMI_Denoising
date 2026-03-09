@@ -2,8 +2,8 @@
 
 python infer.py \
   --config ../configs/train.yaml \
-  --ckpt ../trained_models/fn_260306_DMI_3T_invivo_WB/checkpoints/last.pt \
-  --input ../datasets/fn_260306_DMI_3T_invivo_WB/CombinedCSI.mat \
-  --output ../datasets/fn_260306_DMI_3T_invivo_WB/CombinedCSIDenoised.mat \
+  --ckpt ../trained_models/InVivo_22_22_21_96_8/checkpoints/last.pt \
+  --input ../datasets/sf_brain_DMI_HC_pilot_normalized/CombinedCSI.mat \
+  --output ../datasets/sf_brain_DMI_HC_pilot_normalized/CombinedCSIDenoised.mat \
   --batch-size 600 \
   --gpu 2
