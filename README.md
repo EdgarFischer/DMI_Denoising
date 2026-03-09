@@ -30,6 +30,8 @@ To train the denoising network, run:
 
 python scripts/train.py
 
+or use scripts/train.sh 
+
 Training parameters can be configured in:
 
 configs/train.yaml

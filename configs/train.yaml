@@ -1,5 +1,5 @@
 run:
-  name: "TEST" # give your model a name
+  name: "fn_260306_DMI_3T_invivo_WB" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model
   gpu: "1" # check GPU availabiliy with nvidia-smi
   seed: 42
