@@ -1,23 +1,23 @@
 run:
-  name: "Sims_fx_no_tmppca"
+  name: "fn_260306_DMI_3T_invivo_WB"
   base_dir: "trained_models" # this is where you want to save the trained model
   gpu: "1"
   seed: 42
 
 data:
-  train: ["Simulated_Lesion_double_1_normalized", "Simulated_Lesion_double_2_normalized", "Simulated_Lesion_double_3_normalized", "Simulated_Lesion_double_4_normalized", "Simulated_Lesion_double_5_normalized"]
-  val:   ["Simulated_Lesion_double_6_normalized"]
+  train: ["fn_260306_DMI_3T_invivo_WB"]
+  val:   ["fn_260306_DMI_3T_invivo_WB"]
 
-  image_axes: [0, 3]  # those are the 2 axes for the 2D network, 3, 4 is typically FID and repetition
+  image_axes: [3, 4]  # those are the 2 axes for the 2D network, 3, 4 is typically FID and repetition
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
   num_samples: 10000  # how many voxels are chosen per epoch
   val_samples: 2000
 
-  normalization: False   # data is automatically normalized
+  normalization: True   # data is automatically normalized
 
 masking:
   type: "time1d"          # "time1d" or "2d", time1D means repitions wise masking, 2D random stratisfied pixel selection in 2D
-  num_pixels: 10       # careful: for time1D this corresponds to masked repetitions! for 2D this is actual number of pixels
+  num_pixels: 1       # careful: for time1D this corresponds to masked repetitions! for 2D this is actual number of pixels
   window_size: 3      # how big is the windows from which neighbors are drawn
 
 model:

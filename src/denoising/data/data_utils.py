@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from scipy.io import loadmat
 
 def load_and_preprocess_data(
     folder_names: list,
@@ -18,8 +19,22 @@ def load_and_preprocess_data(
 
     arrays = []
     for fold in folder_names:
-        fn = os.path.join(base_path, fold, "data.npy")
-        arr = np.load(fn)  # expected shape (X,Y,Z,t,T)
+
+        npy_fn = os.path.join(base_path, fold, "data.npy")
+        mat_fn = os.path.join(base_path, fold, "CombinedCSI.mat")
+
+        if os.path.exists(npy_fn):
+            arr = np.load(npy_fn)  # expected shape (X,Y,Z,t,T)
+
+        elif os.path.exists(mat_fn):
+            mat = loadmat(mat_fn)
+            arr = mat["csi"]["Data"][0, 0]
+
+        else:
+            raise FileNotFoundError(
+                f"No data file found in {os.path.join(base_path, fold)} "
+                f"(expected data.npy or CombinedCSI.mat)"
+            )
 
         if arr.ndim == 5:
             arr = arr[..., np.newaxis]  # -> (X,Y,Z,t,T,1)

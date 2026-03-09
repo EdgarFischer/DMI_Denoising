@@ -14,6 +14,14 @@ Dynamic DMI data are expected in the format
 
 where x, y, z denote spatial dimensions, t the FID index, and T the repetition index.
 
+The data can be provided either as
+
+- a NumPy file `data.npy` containing a complex array with shape `(x, y, z, t, T)`, or
+- a MATLAB file `CombinedCSI.mat` using the internal group format where the data are stored in  
+  `csi.Data`.
+
+In both cases the loaded data must correspond to a 5D array with shape `(x, y, z, t, T)`.
+
 Details on the acquisition protocol and data availability are described in the paper.
 
 ## Training

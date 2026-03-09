@@ -8,12 +8,11 @@ import json
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 
-
 def parse_args():
-    p = argparse.ArgumentParser(description="Run denoising inference on a single FID .npy file.")
+    p = argparse.ArgumentParser(description="Run denoising inference on a single input file (.npy or CombinedCSI.mat).")
     p.add_argument("--config", type=str, default=str(ROOT / "configs" / "train.yaml"))
     p.add_argument("--ckpt", type=str, required=True, help="Path to model checkpoint (.pt)")
-    p.add_argument("--input", type=str, required=True, help="Path to input FID .npy file")
+    p.add_argument("--input", type=str, required=True, help="Path to input file (.npy or CombinedCSI.mat)")
     p.add_argument("--output", type=str, default="", help="Optional output .npy file path")
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--gpu", type=str, default=None, help="GPU id (e.g. 0,1,2). Optional (overrides YAML).")

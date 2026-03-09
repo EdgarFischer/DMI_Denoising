@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Tuple, Union, Dict, Any, List
 import time
+from scipy.io import loadmat, savemat
 
 import numpy as np
 import torch
@@ -19,16 +20,29 @@ def _resolve_ckpt_path(ckpt: Union[str, Path]) -> Path:
 
 def _load_fid_file(input_path: Union[str, Path]) -> np.ndarray:
     """
-    Loads a single FID volume from a .npy file.
+    Loads a single FID volume from a .npy file or CombinedCSI.mat.
     Expected shape: (X,Y,Z,t,T) complex or real.
     """
     input_path = Path(input_path)
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
-    arr = np.load(input_path)
+    if input_path.suffix == ".npy":
+        arr = np.load(input_path)
+
+    elif input_path.suffix == ".mat":
+        mat = loadmat(input_path)
+        arr = np.asarray(mat["csi"]["Data"][0, 0])
+
+    else:
+        raise ValueError(
+            f"Unsupported input format: {input_path}. "
+            f"Expected .npy or .mat"
+        )
+
     if arr.ndim != 5:
         raise ValueError(f"Expected FID shape (X,Y,Z,t,T), got {arr.shape}")
+
     return np.asarray(arr)
 
 
@@ -212,6 +226,10 @@ def infer(
     else:
         y_fid = y_work
 
+    # ---- restore original scale if input was normalized ----
+    if do_norm and scale > 0:
+        y_fid = y_fid * scale
+
     y_fid = y_fid.astype(np.complex64, copy=False)
 
     meta = {
@@ -233,7 +251,24 @@ def infer(
     if output_path is not None:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(output_path, y_fid)
+
+        if output_path.suffix == ".npy":
+            np.save(output_path, y_fid)
+
+        elif output_path.suffix == ".mat":
+            if input_path.suffix != ".mat":
+                raise ValueError(
+                    "Saving to .mat is currently only supported when the input is also a .mat file."
+                )
+
+            mat = loadmat(input_path)
+            mat["csi"]["Data"][0, 0] = y_fid
+            savemat(output_path, mat, long_field_names=True)
+
+        else:
+            raise ValueError(
+                f"Unsupported output format: {output_path}. Expected .npy or .mat"
+            )
 
         if save_input:
             np.save(output_path.with_name(output_path.stem + "_input.npy"), x_fid)
