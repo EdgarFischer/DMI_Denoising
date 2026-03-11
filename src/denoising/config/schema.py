@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 
 @dataclass(frozen=True)
@@ -14,7 +14,8 @@ class RunCfg:
 class DataCfg:
     train: List[str]
     val: List[str]
-    image_axes: Tuple[int, int]
+    image_axes: Tuple[int, ...]
+    channel_axis: Optional[int]
     fourier_axes: Tuple[int, ...]
     num_samples: int
     val_samples: int

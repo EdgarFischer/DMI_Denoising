@@ -8,7 +8,8 @@ data:
   train: ["fn_260306_DMI_3T_invivo_WB"]
   val:   ["fn_260306_DMI_3T_invivo_WB"]
 
-  image_axes: [3, 4]  # those are the 2 axes for the 2D network, 3, 4 is typically FID and repetition
+  image_axes: [3, 4]  # those are the 2 axes for the 2D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
+  channel_axis: 2     # numer or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
   num_samples: 10000  # how many voxels are chosen per epoch
   val_samples: 2000
@@ -16,7 +17,7 @@ data:
   normalization: True   # data is automatically normalized
 
 masking:
-  type: "time1d"          # "time1d" or "2d", time1D means repitions wise masking, 2D random stratisfied pixel selection in 2D
+  type: "time1d"          # "time1d" or "2d", time1D means repitions wise masking works for 2D and 3D Network, 2D random stratisfied pixel selection in 2D, 2D only works for 2D network!
   num_pixels: 1       # careful: for time1D this corresponds to masked repetitions! for 2D this is actual number of pixels
   window_size: 3      # how big is the windows from which neighbors are drawn
 

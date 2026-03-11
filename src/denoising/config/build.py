@@ -11,6 +11,10 @@ def build_config(raw: dict) -> Config:
         train=list(data_raw["train"]),
         val=list(data_raw["val"]),
         image_axes=tuple(data_raw["image_axes"]),
+        channel_axis=(
+            None if data_raw.get("channel_axis", None) is None
+            else int(data_raw["channel_axis"])
+        ),
         fourier_axes=tuple(data_raw["fourier_axes"]),
         num_samples=int(data_raw["num_samples"]),
         val_samples=int(data_raw["val_samples"]),
