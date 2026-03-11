@@ -21,7 +21,7 @@ if [[ "$ENABLE_GIT" =~ ^[Yy] ]]; then
   echo "→ Launching container with Git support…"
   docker run -d \
     --gpus all \
-    --name mrjo \
+    --name deepdenoising \
     -p 7017:8888 \
     -v "${SSH_AUTH_SOCK}:/ssh-agent.sock" \
     -v "${HOME}/.ssh:/home/hostuser/.ssh:ro" \
@@ -31,7 +31,7 @@ if [[ "$ENABLE_GIT" =~ ^[Yy] ]]; then
     -e GIT_COMMITTER_NAME="${GIT_NAME}" \
     -e GIT_COMMITTER_EMAIL="${GIT_EMAIL}" \
     -v "${WORKSPACE}:/workspace" \
-    dl
+    deepdenoising
 
   echo "→ Configuring Git safe.directory…"
   docker exec -u hostuser mrjo \

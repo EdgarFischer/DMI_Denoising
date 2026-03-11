@@ -9,7 +9,7 @@ from matplotlib.gridspec import GridSpec
 def plot_dmi_timecourse_multi(
     BASE_LIST, T_INDEX_LIST, save_path,
     T1_Z=106, DMI_Z=11,
-    T1_WINDOW=(1268, 3619),
+    T1_WINDOW= (1268, 3619),#(0, 225),  #(1268, 3619),
     LINEWIDTH=1.8, figsize_scale=1.0,
     method_labels=None, rep_labels=None,
     fontsize=24,
@@ -49,7 +49,7 @@ def plot_dmi_timecourse_multi(
 
     # --- T1 aus erster Methode ---
     base0 = BASE_LIST[0]
-    T1_PATH = os.path.join(base0, "maps", "magnitude.nii")
+    T1_PATH = os.path.join(base0, "maps", "magnitude.nii")#"flair_coreg.nii")    #"magnitude.nii")
 
     t1_img = nib.load(T1_PATH)
     t1 = t1_img.get_fdata()
