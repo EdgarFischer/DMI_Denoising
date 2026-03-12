@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Tuple, Union, Dict, Any, List
 import time
-from scipy.io import loadmat, savemat
 
+from scipy.io import loadmat, savemat
 import numpy as np
 import torch
 
 from denoising.models.unet2d import UNet2D
+from denoising.models.unet3d import UNet3D
 
 
 def _resolve_ckpt_path(ckpt: Union[str, Path]) -> Path:
@@ -20,8 +21,14 @@ def _resolve_ckpt_path(ckpt: Union[str, Path]) -> Path:
 
 def _load_fid_file(input_path: Union[str, Path]) -> np.ndarray:
     """
-    Loads a single FID volume from a .npy file or CombinedCSI.mat.
-    Expected shape: (X,Y,Z,t,T) complex or real.
+    Loads a single volume from .npy or CombinedCSI.mat.
+
+    Supported raw input shapes:
+      - 4D: (X,Y,Z,F)
+      - 5D: (X,Y,Z,F,T)
+
+    Returns a standardized complex array with shape:
+      (X,Y,Z,F,T)
     """
     input_path = Path(input_path)
     if not input_path.exists():
@@ -29,26 +36,31 @@ def _load_fid_file(input_path: Union[str, Path]) -> np.ndarray:
 
     if input_path.suffix == ".npy":
         arr = np.load(input_path)
-
     elif input_path.suffix == ".mat":
         mat = loadmat(input_path)
         arr = np.asarray(mat["csi"]["Data"][0, 0])
-
     else:
         raise ValueError(
-            f"Unsupported input format: {input_path}. "
-            f"Expected .npy or .mat"
+            f"Unsupported input format: {input_path}. Expected .npy or .mat"
         )
 
-    if arr.ndim != 5:
-        raise ValueError(f"Expected FID shape (X,Y,Z,t,T), got {arr.shape}")
+    arr = np.asarray(arr)
 
-    return np.asarray(arr)
+    if arr.ndim == 4:
+        arr = arr[..., np.newaxis]   # -> (X,Y,Z,F,1)
+    elif arr.ndim == 5:
+        pass
+    else:
+        raise ValueError(
+            f"Expected 4D or 5D input, got shape {arr.shape}"
+        )
+
+    return arr.astype(np.complex64, copy=False)
 
 
 def _normalize_fid_inplace(arr: np.ndarray) -> float:
     """
-    Normalize in FID domain to max(|.|)=1. Returns scale used (maxv).
+    Normalize in FID domain to max(|.|)=1. Returns scale used.
     """
     maxv = float(np.max(np.abs(arr)))
     if maxv > 0:
@@ -57,9 +69,6 @@ def _normalize_fid_inplace(arr: np.ndarray) -> float:
 
 
 def _apply_fft(arr: np.ndarray, fourier_axes: List[int]) -> np.ndarray:
-    """
-    Apply fft + fftshift on given axes.
-    """
     out = arr
     for ax in fourier_axes:
         out = np.fft.fft(out, axis=ax)
@@ -68,9 +77,6 @@ def _apply_fft(arr: np.ndarray, fourier_axes: List[int]) -> np.ndarray:
 
 
 def _apply_ifft(arr: np.ndarray, fourier_axes: List[int]) -> np.ndarray:
-    """
-    Apply inverse of fftshift+fft: ifftshift + ifft on given axes.
-    """
     out = arr
     for ax in fourier_axes:
         out = np.fft.ifftshift(out, axes=ax)
@@ -78,70 +84,142 @@ def _apply_ifft(arr: np.ndarray, fourier_axes: List[int]) -> np.ndarray:
     return out
 
 
-def _to_n2ft_from_5d(cfg, arr_5d: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
+def _to_model_input(cfg, arr: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
-    Convert 5D complex array -> (N,2,F,T) float32 + shape_info.
+    Convert standardized complex array with shape (X,Y,Z,F,T)
+    to model input.
 
-    arr_5d is expected to be (X,Y,Z,*,*) with cfg.data.image_axes selecting the 2D plane (F,T),
-    typically image_axes=[3,4].
+    Global axes are interpreted exactly as in training.
 
-    Output is (N,2,F,T) where N = product of remaining dims (X*Y*Z).
+    Output:
+      x_np:
+        - without channel_axis: (N, 2, *spatial)
+        - with channel_axis   : (N, 2*C, *spatial)
+
+    where:
+      spatial = axes selected by image_axes
+      C       = size of channel_axis
+      N       = product of all remaining leading axes
     """
-    arr = np.asarray(arr_5d)
+    arr = np.asarray(arr)
     if arr.ndim != 5:
-        raise ValueError(f"Expected 5D array, got {arr.shape}")
+        raise ValueError(f"Expected standardized 5D array, got {arr.shape}")
 
-    ax_f, ax_T = cfg.data.image_axes
-    if ax_f == ax_T:
-        raise ValueError("image_axes must contain two distinct axes")
+    image_axes = tuple(cfg.data.image_axes)
+    channel_axis = cfg.data.channel_axis
 
-    orig_shape = arr.shape
-    perm = [i for i in range(arr.ndim) if i not in (ax_f, ax_T)] + [ax_f, ax_T]
-    arr2 = np.transpose(arr, axes=perm)  # (leading..., F, T)
+    if len(image_axes) not in (2, 3):
+        raise ValueError(f"image_axes must have length 2 or 3, got {image_axes}")
 
-    F = arr2.shape[-2]
-    T = arr2.shape[-1]
-    leading_shape = arr2.shape[:-2]
-    N = int(np.prod(leading_shape))
+    if channel_axis is not None and channel_axis in image_axes:
+        raise ValueError("channel_axis must not be part of image_axes")
 
-    arr2 = arr2.reshape(N, F, T)  # (N,F,T)
+    network_axes = list(image_axes)
+    if channel_axis is not None:
+        network_axes.append(channel_axis)
 
-    if np.iscomplexobj(arr2):
-        x = np.stack([arr2.real, arr2.imag], axis=1)  # (N,2,F,T)
+    leading_axes = [ax for ax in range(arr.ndim) if ax not in network_axes]
+
+    if channel_axis is None:
+        # (leading..., *image_axes)
+        perm = leading_axes + list(image_axes)
+        arr_p = np.transpose(arr, axes=perm)
+
+        leading_shape = arr_p.shape[:len(leading_axes)]
+        spatial_shape = arr_p.shape[len(leading_axes):]
+        N = int(np.prod(leading_shape)) if len(leading_shape) > 0 else 1
+
+        arr_p = arr_p.reshape(N, *spatial_shape)  # (N, *spatial)
+
+        real = arr_p.real.astype(np.float32, copy=False)
+        imag = arr_p.imag.astype(np.float32, copy=False)
+        x_np = np.stack([real, imag], axis=1)     # (N, 2, *spatial)
+
     else:
-        x = np.stack([arr2, np.zeros_like(arr2)], axis=1)
+        # (leading..., channel, *image_axes)
+        perm = leading_axes + [channel_axis] + list(image_axes)
+        arr_p = np.transpose(arr, axes=perm)
+
+        n_lead = len(leading_axes)
+        leading_shape = arr_p.shape[:n_lead]
+        C = arr_p.shape[n_lead]
+        spatial_shape = arr_p.shape[n_lead + 1:]
+        N = int(np.prod(leading_shape)) if len(leading_shape) > 0 else 1
+
+        arr_p = arr_p.reshape(N, C, *spatial_shape)   # (N, C, *spatial)
+
+        real = arr_p.real.astype(np.float32, copy=False)
+        imag = arr_p.imag.astype(np.float32, copy=False)
+        x_np = np.stack([real, imag], axis=1)         # (N, 2, C, *spatial)
+        x_np = x_np.reshape(N, 2 * C, *spatial_shape) # (N, 2C, *spatial)
 
     shape_info = {
-        "orig_shape": orig_shape,
-        "perm": perm,
-        "leading_shape": leading_shape,
-        "F": F,
-        "T": T,
+        "orig_shape": tuple(arr.shape),
+        "image_axes": image_axes,
+        "channel_axis": channel_axis,
+        "leading_axes": tuple(leading_axes),
+        "leading_shape": tuple(leading_shape),
+        "spatial_shape": tuple(spatial_shape),
     }
-    return x.astype(np.float32, copy=False), shape_info
+    if channel_axis is not None:
+        shape_info["channel_size"] = int(C)
+
+    return x_np.astype(np.float32, copy=False), shape_info
 
 
-def _from_n2ft_to_5d(y_np: np.ndarray, shape_info: Dict[str, Any]) -> np.ndarray:
+def _from_model_output(y_np: np.ndarray, shape_info: Dict[str, Any]) -> np.ndarray:
     """
-    Convert (N,2,F,T) float32 -> complex 5D with original shape.
-    """
-    if y_np.ndim != 4 or y_np.shape[1] != 2:
-        raise ValueError(f"Expected (N,2,F,T), got {y_np.shape}")
+    Inverse of _to_model_input.
 
+    Input:
+      y_np:
+        - without channel_axis: (N, 2, *spatial)
+        - with channel_axis   : (N, 2*C, *spatial)
+
+    Output:
+      complex array with original standardized shape (X,Y,Z,F,T)
+    """
     orig_shape = tuple(shape_info["orig_shape"])
-    perm = list(shape_info["perm"])
+    image_axes = tuple(shape_info["image_axes"])
+    channel_axis = shape_info["channel_axis"]
+    leading_axes = tuple(shape_info["leading_axes"])
     leading_shape = tuple(shape_info["leading_shape"])
-    F = int(shape_info["F"])
-    T = int(shape_info["T"])
+    spatial_shape = tuple(shape_info["spatial_shape"])
 
-    y_complex = y_np[:, 0] + 1j * y_np[:, 1]  # (N,F,T)
-    y_complex = y_complex.reshape(*leading_shape, F, T)  # (leading...,F,T)
+    if channel_axis is None:
+        if y_np.ndim != 2 + len(spatial_shape) or y_np.shape[1] != 2:
+            raise ValueError(
+                f"Expected y_np shape (N,2,*spatial), got {y_np.shape}"
+            )
 
-    inv_perm = np.argsort(perm)
-    y_complex = np.transpose(y_complex, axes=inv_perm)
+        y_complex = y_np[:, 0] + 1j * y_np[:, 1]           # (N, *spatial)
+        y_complex = y_complex.reshape(*leading_shape, *spatial_shape)
+
+        perm = list(leading_axes) + list(image_axes)
+        inv_perm = np.argsort(perm)
+        y_complex = np.transpose(y_complex, axes=inv_perm)
+
+    else:
+        C = int(shape_info["channel_size"])
+        expected_c = 2 * C
+
+        if y_np.ndim != 2 + len(spatial_shape) or y_np.shape[1] != expected_c:
+            raise ValueError(
+                f"Expected y_np shape (N,{expected_c},*spatial), got {y_np.shape}"
+            )
+
+        y_np = y_np.reshape(y_np.shape[0], 2, C, *spatial_shape)  # (N,2,C,*spatial)
+        y_complex = y_np[:, 0] + 1j * y_np[:, 1]                  # (N,C,*spatial)
+        y_complex = y_complex.reshape(*leading_shape, C, *spatial_shape)
+
+        perm = list(leading_axes) + [channel_axis] + list(image_axes)
+        inv_perm = np.argsort(perm)
+        y_complex = np.transpose(y_complex, axes=inv_perm)
 
     if y_complex.shape != orig_shape:
-        raise RuntimeError(f"Shape mismatch: got {y_complex.shape}, expected {orig_shape}")
+        raise RuntimeError(
+            f"Shape mismatch after reconstruction: got {y_complex.shape}, expected {orig_shape}"
+        )
 
     return y_complex.astype(np.complex64, copy=False)
 
@@ -159,14 +237,19 @@ def infer(
     """
     Single-file inference.
 
-    Loads FID from input_path with shape (X,Y,Z,t,T).
-    Normalizes in FID domain (max abs = 1), then applies FFT if cfg.data.fourier_axes is set.
-    Runs UNet2D in the (F,T) plane defined by cfg.data.image_axes.
-    If FFT was applied, inverts it at the end and returns/saves FID again.
+    Supported input raw shapes:
+      - 4D: (X,Y,Z,F)
+      - 5D: (X,Y,Z,F,T)
+
+    Uses the same axis semantics as training:
+      - cfg.data.image_axes
+      - cfg.data.channel_axis
+      - cfg.data.fourier_axes
 
     Returns:
-      y_fid: complex64 array with SAME shape as input
-      meta: dict (NOT saved to disk)
+      y_fid: complex64 array with same shape as standardized input
+             i.e. 4D input returns 4D, 5D input returns 5D
+      meta: dict
     """
     ckpt_path = _resolve_ckpt_path(ckpt_path)
     input_path = Path(input_path)
@@ -177,34 +260,45 @@ def infer(
     elif isinstance(device, str):
         device = torch.device(device)
 
-    # ---- load FID ----
-    x_fid = _load_fid_file(input_path).astype(np.complex64, copy=False)
-    in_shape = x_fid.shape
+    # ---- load input ----
+    x_fid = _load_fid_file(input_path)   # standardized to (X,Y,Z,F,T)
+    standardized_shape = x_fid.shape
+    original_input_ndim = 4 if standardized_shape[-1] == 1 else 5
 
-    # ---- normalize in FID domain (your convention) ----
+    # ---- normalize in FID domain ----
     do_norm = bool(getattr(cfg.data, "normalization", True))
-
     scale = 1.0
     if do_norm:
         scale = _normalize_fid_inplace(x_fid)
 
-    # ---- forward domain used for network ----
+    # ---- working domain ----
     fourier_axes = list(getattr(cfg.data, "fourier_axes", ()))
     if len(fourier_axes) > 0:
         x_work = _apply_fft(x_fid, fourier_axes)
     else:
         x_work = x_fid
 
-    # ---- convert to (N,2,F,T) ----
-    x_np, shape_info = _to_n2ft_from_5d(cfg, x_work)
+    # ---- to model input ----
+    x_np, shape_info = _to_model_input(cfg, x_work)
 
-    # ---- model ----
-    model = UNet2D(2, 2, cfg.model.features).to(device).eval()
+    # ---- infer model dimensions ----
+    in_channels = int(x_np.shape[1])
+    spatial_dim = x_np.ndim - 2
+    out_channels = in_channels
+
+    if spatial_dim == 2:
+        model = UNet2D(in_channels, out_channels, cfg.model.features).to(device).eval()
+    elif spatial_dim == 3:
+        model = UNet3D(in_channels, out_channels, cfg.model.features).to(device).eval()
+    else:
+        raise ValueError(f"Unsupported spatial_dim={spatial_dim}. Expected 2 or 3.")
+
+    # ---- load checkpoint ----
     state = torch.load(ckpt_path, map_location=device)
     state_dict = state.get("model_state", state)
     model.load_state_dict(state_dict, strict=True)
 
-    # ---- run ----
+    # ---- run inference ----
     y_np = np.empty_like(x_np)
     t0 = time.time()
 
@@ -217,26 +311,32 @@ def infer(
 
     dt = time.time() - t0
 
-    # ---- reconstruct 5D in working domain ----
-    y_work = _from_n2ft_to_5d(y_np, shape_info)
+    # ---- reconstruct working-domain volume ----
+    y_work = _from_model_output(y_np, shape_info)
 
-    # ---- invert FFT back to FID if applied ----
+    # ---- invert FFT if needed ----
     if len(fourier_axes) > 0:
         y_fid = _apply_ifft(y_work, fourier_axes)
     else:
         y_fid = y_work
 
-    # ---- restore original scale if input was normalized ----
+    # ---- restore original scale ----
     if do_norm and scale > 0:
         y_fid = y_fid * scale
 
     y_fid = y_fid.astype(np.complex64, copy=False)
 
+    # ---- drop singleton T again if original input was 4D ----
+    if original_input_ndim == 4:
+        y_out = y_fid[..., 0]
+    else:
+        y_out = y_fid
+
     meta = {
         "checkpoint": str(ckpt_path),
         "input_path": str(input_path),
-        "input_shape": list(in_shape),
-        "output_shape": list(y_fid.shape),
+        "standardized_input_shape": list(standardized_shape),
+        "output_shape": list(y_out.shape),
         "batch_size": int(batch_size),
         "seconds": float(dt),
         "device": str(device),
@@ -245,15 +345,19 @@ def infer(
         "fft_applied": len(fourier_axes) > 0,
         "working_domain": "FFT" if len(fourier_axes) > 0 else "FID",
         "returned_domain": "FID",
+        "image_axes": list(cfg.data.image_axes),
+        "channel_axis": cfg.data.channel_axis,
+        "spatial_dim": int(spatial_dim),
+        "in_channels": int(in_channels),
     }
 
-    # ---- optional save (ONLY the arrays; no meta json) ----
+    # ---- save ----
     if output_path is not None:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         if output_path.suffix == ".npy":
-            np.save(output_path, y_fid)
+            np.save(output_path, y_out)
 
         elif output_path.suffix == ".mat":
             if input_path.suffix != ".mat":
@@ -262,7 +366,7 @@ def infer(
                 )
 
             mat = loadmat(input_path)
-            mat["csi"]["Data"][0, 0] = y_fid
+            mat["csi"]["Data"][0, 0] = y_out
             savemat(output_path, mat, long_field_names=True)
 
         else:
@@ -273,4 +377,4 @@ def infer(
         if save_input:
             np.save(output_path.with_name(output_path.stem + "_input.npy"), x_fid)
 
-    return y_fid, meta
+    return y_out, meta
