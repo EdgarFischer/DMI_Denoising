@@ -36,8 +36,11 @@ def load_and_preprocess_data(
                 f"(expected data.npy or CombinedCSI.mat)"
             )
 
-        if arr.ndim == 5:
-            arr = arr[..., np.newaxis]  # -> (X,Y,Z,t,T,1)
+        if arr.ndim == 4:          # (X,Y,Z,t)
+            arr = arr[..., np.newaxis, np.newaxis]  # -> (X,Y,Z,t,1,1)
+
+        elif arr.ndim == 5:        # (X,Y,Z,t,T)
+            arr = arr[..., np.newaxis]              # -> (X,Y,Z,t,T,1)
 
         # 1) STANDARD: normalize in FID domain (before any FFT)
         if normalization:

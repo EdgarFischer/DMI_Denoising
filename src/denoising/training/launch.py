@@ -47,7 +47,7 @@ def main(cfg, config_path: str | None = None):
         if cfg_src.exists():
             shutil.copy2(cfg_src, run_dir / cfg_src.name)
 
-    # 4) Permissions (optional, e.g. needed on HPC)
+    # 4) Permissions
     for d in (run_dir, checkpoint_dir, log_dir, used_src_dir):
         try:
             os.chmod(d, 0o777)
@@ -55,41 +55,34 @@ def main(cfg, config_path: str | None = None):
             pass
 
     # ------------------------------------------------------------------
-    # 5) Build N2V transforms based on cfg.mask.type
+    # 5) Build masking transform based on cfg.mask.masked_axes
     # ------------------------------------------------------------------
-    from denoising.data.transforms import (
-        StratifiedPixelSelection2D,
-        StratifiedPixelSelectionTime1D,
-    )
+    from denoising.data.transforms import StratifiedAxisMasking
 
     m = cfg.mask
-    print(f"[mask] type={m.type} num_pixels={m.num_pixels} window_size={m.window_size}")
+    print(
+        f"[mask] masked_axes={m.masked_axes} "
+        f"num_pixels={m.num_pixels} window_size={m.window_size}"
+    )
 
-    if m.type == "time1d":
-        transform_train = StratifiedPixelSelectionTime1D(
-            num_masked_pixels=m.num_pixels,
-            window_size=m.window_size,
+    if len(m.masked_axes) not in (1, 2):
+        raise ValueError(
+            f"mask.masked_axes must contain 1 or 2 axes, got {m.masked_axes}"
         )
-        transform_val = StratifiedPixelSelectionTime1D(
-            num_masked_pixels=m.num_pixels,
-            window_size=m.window_size,
-        )
-    elif m.type == "2d":
-        transform_train = StratifiedPixelSelection2D(
-            num_masked_pixels=m.num_pixels,
-            window_size=m.window_size,
-        )
-        transform_val = StratifiedPixelSelection2D(
-            num_masked_pixels=m.num_pixels,
-            window_size=m.window_size,
-        )
-    else:
-        raise ValueError(f"Unknown mask.type: {m.type} (expected 'time1d' or '2d')")
 
-    # 6) Import fixed trainer (2D n2v only)
+    transform_train = StratifiedAxisMasking(
+        num_masked_pixels=m.num_pixels,
+        window_size=m.window_size,
+    )
+    transform_val = StratifiedAxisMasking(
+        num_masked_pixels=m.num_pixels,
+        window_size=m.window_size,
+    )
+
+    # 6) Import trainer
     from denoising.training.trainers.trainer_n2v import train as train_func
 
-    print("[train] Starting denoising.training.trainers.trainer_n2v.train (2D n2v-only)")
+    print("[train] Starting denoising.training.trainers.trainer_n2v.train")
 
     # 7) Start training
     train_func(

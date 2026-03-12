@@ -24,7 +24,7 @@ class DataCfg:
 
 @dataclass(frozen=True)
 class MaskCfg:
-    type: str              # "time1d" | "2d"
+    masked_axes: Tuple[int, ...]   # global axes that will be masked, can be 1D oder 2D
     num_pixels: int
     window_size: int
 

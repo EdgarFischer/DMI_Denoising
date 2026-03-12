@@ -1,10 +1,10 @@
 # ───────────────────────── denoising/training/trainers/trainer_n2v.py ─────────────────────────
-# Noise2Void / Noise2Self, 2-D (refactored: no global config.py, no import side effects)
+# Noise2Void / Noise2Self, flexible 2D/3D version
 
 import os
 import random
 import logging
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 import torch
@@ -12,10 +12,10 @@ import torch.nn.utils as tnn_utils
 from torch.utils.data import DataLoader
 
 from denoising.data.data_utils import load_and_preprocess_data
-from denoising.data.mrsi_2d_dataset import MRSiNDataset
+from denoising.data.mrsi_nd_dataset import MRSiNDataset
 from denoising.losses.n2v_loss import masked_mse_loss
 from denoising.models.unet2d import UNet2D
-
+from denoising.models.unet3d import UNet3D
 
 # ---------------------------
 # Helpers
@@ -46,6 +46,8 @@ def prepare_dataset(
     base_path: str,
     fourier_axes,
     image_axes,
+    channel_axis,
+    masked_axes,
     fixed_indices,
     phase_prob: float,
     normalization: bool,
@@ -56,9 +58,12 @@ def prepare_dataset(
         fourier_axes=list(fourier_axes),
         normalization=normalization,
     )
+
     return MRSiNDataset(
         data=data,
         image_axes=tuple(image_axes),
+        channel_axis=channel_axis,
+        masked_axes=tuple(masked_axes),
         fixed_indices=fixed_indices,
         transform=transform,
         num_samples=num_samples,
@@ -84,46 +89,37 @@ def train(
     transform_train=None,
     transform_val=None,
 ):
-    """
-    Args:
-        cfg: typed config object (from YAML). Expected fields:
-            cfg.run.seed, cfg.data.train/val, cfg.data.image_axes, cfg.data.fourier_axes,
-            cfg.data.num_samples/val_samples, cfg.model.*, cfg.optim.*
-            Optional: cfg.data.fixed_indices, cfg.data.phase_prob, cfg.run.self_supervised_mode
-        run_dir/checkpoint_dir/log_dir: output paths
-        transform_train/transform_val: already-built masking transforms (recommended)
-    """
     logger = setup_logger(log_dir)
 
     # ----- Repro / mode -----
     seed = cfg.run.seed
     set_seed(seed)
 
-    # If you keep a mode in YAML, use it; otherwise default to n2v
     self_mode = getattr(cfg, "self_supervised_mode", None)
     if self_mode is None:
-        # common place if you keep it under run or masking
         self_mode = getattr(cfg.run, "self_supervised_mode", None)
     if self_mode is None:
         self_mode = "n2v"
 
     assert self_mode in ("n2v", "n2s"), f"Unsupported self_supervised_mode: {self_mode}"
 
-    logger.info(f"Start Training 2D ({self_mode.upper()}) – Seed {seed}")
+    logger.info(f"Start Training ({self_mode.upper()}) – Seed {seed}")
 
-    # ----- Dataset params (handle optional fields cleanly) -----
+    # ----- Dataset params -----
     base_path = "datasets"
     image_axes = cfg.data.image_axes
+    channel_axis = cfg.data.channel_axis
     fourier_axes = cfg.data.fourier_axes
+    masked_axes = cfg.mask.masked_axes
+
     num_samples = cfg.data.num_samples
     val_samples = cfg.data.val_samples
 
     fixed_indices = getattr(cfg.data, "fixed_indices", None)
     phase_prob = getattr(cfg.data, "phase_prob", 1.0)
-
-    # ----- Build datasets -----
     do_norm = getattr(cfg.data, "normalization", True)
 
+    # ----- Build datasets -----
     train_ds = prepare_dataset(
         folders=list(cfg.data.train),
         transform=transform_train,
@@ -131,10 +127,13 @@ def train(
         base_path=base_path,
         fourier_axes=fourier_axes,
         image_axes=image_axes,
+        channel_axis=channel_axis,
+        masked_axes=masked_axes,
         fixed_indices=fixed_indices,
         phase_prob=phase_prob,
-        normalization=do_norm, 
+        normalization=do_norm,
     )
+
     val_ds = prepare_dataset(
         folders=list(cfg.data.val),
         transform=transform_val,
@@ -142,6 +141,8 @@ def train(
         base_path=base_path,
         fourier_axes=fourier_axes,
         image_axes=image_axes,
+        channel_axis=channel_axis,
+        masked_axes=masked_axes,
         fixed_indices=fixed_indices,
         phase_prob=phase_prob,
         normalization=do_norm,
@@ -169,12 +170,28 @@ def train(
         pin_memory=pin_memory,
     )
 
+    # ----- Infer model dimensions from dataset -----
+    sample_inp, sample_tgt, sample_mask = train_ds[0]
+    in_channels = int(sample_inp.shape[0])
+    out_channels = int(sample_tgt.shape[0])
+    spatial_dim = sample_inp.ndim - 1
+
+    logger.info(
+        f"[dataset] sample_inp shape={tuple(sample_inp.shape)}, "
+        f"sample_tgt shape={tuple(sample_tgt.shape)}, "
+        f"sample_mask shape={tuple(sample_mask.shape)}"
+    )
+    logger.info(
+        f"[model] inferred in_channels={in_channels}, "
+        f"out_channels={out_channels}, spatial_dim={spatial_dim}"
+    )
+
     # ----- Debug mask -----
     if self_mode == "n2v":
         try:
             _, _, mask_dbg = next(iter(train_loader))
             logger.info(
-                f"[DEBUG] N2V-Maske shape {tuple(mask_dbg.shape)}, mean {mask_dbg.float().mean():.4f}"
+                f"[DEBUG] N2V mask shape {tuple(mask_dbg.shape)}, mean {mask_dbg.float().mean():.4f}"
             )
         except StopIteration:
             logger.warning("[DEBUG] Train Loader leer – keine Maske.")
@@ -182,7 +199,19 @@ def train(
             logger.warning(f"[DEBUG] Mask debug failed: {e}")
 
     # ----- Model / optim / scheduler -----
-    model = UNet2D(2, 2, cfg.model.features).to(device)
+    if spatial_dim == 2:
+        model = UNet2D(in_channels, out_channels, cfg.model.features).to(device)
+        logger.info("[model] Using UNet2D")
+    elif spatial_dim == 3:
+        if UNet3D is None:
+            raise ImportError(
+                "spatial_dim==3 detected, but denoising.models.unet3d.UNet3D could not be imported."
+            )
+        model = UNet3D(in_channels, out_channels, cfg.model.features).to(device)
+        logger.info("[model] Using UNet3D")
+    else:
+        raise ValueError(f"Unsupported spatial_dim={spatial_dim}. Expected 2 or 3.")
+
     optim = torch.optim.Adam(model.parameters(), lr=cfg.optim.lr)
 
     def lr_lambda(epoch: int):
@@ -196,12 +225,14 @@ def train(
     ckpt_path = getattr(cfg, "pretrained_ckpt", "")
     if ckpt_path == "":
         ckpt_path = getattr(cfg.optim, "pretrained_ckpt", "") if hasattr(cfg, "optim") else ""
+
     if ckpt_path and os.path.isfile(ckpt_path):
         ckpt = torch.load(ckpt_path, map_location=device)
         state_dict = ckpt.get("model_state", ckpt)
         strict_flag = getattr(cfg, "pretrained_strict", True)
         model.load_state_dict(state_dict, strict=strict_flag)
         logger.info(f"Gewichte geladen aus {ckpt_path}")
+
         if getattr(cfg, "load_optimizer_from_pretrained", False) and "optimizer_state" in ckpt:
             try:
                 optim.load_state_dict(ckpt["optimizer_state"])
@@ -224,9 +255,9 @@ def train(
         running = 0.0
 
         for inp, tgt, mask_n2v in train_loader:
-            inp = inp.to(device)
-            tgt = tgt.to(device)
-            mask_n2v = mask_n2v.to(device)
+            inp = inp.to(device, non_blocking=True)
+            tgt = tgt.to(device, non_blocking=True)
+            mask_n2v = mask_n2v.to(device, non_blocking=True)
 
             if self_mode == "n2s":
                 mask = sample_n2s_mask(inp[:, :1].shape, p=0.03, device=device)
@@ -249,9 +280,9 @@ def train(
         running = 0.0
         with torch.no_grad():
             for inp, tgt, mask_n2v in val_loader:
-                inp = inp.to(device)
-                tgt = tgt.to(device)
-                mask_n2v = mask_n2v.to(device)
+                inp = inp.to(device, non_blocking=True)
+                tgt = tgt.to(device, non_blocking=True)
+                mask_n2v = mask_n2v.to(device, non_blocking=True)
 
                 if self_mode == "n2s":
                     mask = sample_n2s_mask(inp[:, :1].shape, p=0.03, device=device)

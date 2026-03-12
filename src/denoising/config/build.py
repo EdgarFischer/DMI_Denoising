@@ -24,7 +24,7 @@ def build_config(raw: dict) -> Config:
     # --- masking ---
     mask_raw = raw["masking"]
     mask = MaskCfg(
-        type=str(mask_raw.get("type", "time1d")),  # default
+        masked_axes=tuple(mask_raw["masked_axes"]),
         num_pixels=int(mask_raw["num_pixels"]),
         window_size=int(mask_raw["window_size"]),
     )
