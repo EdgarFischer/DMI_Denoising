@@ -41,6 +41,7 @@ trained_models/
 *.mat
 src/denoising/data/Tensor-MP-PCA-main/
 archive/
+datasets/
 
 
 # Ignore Jupyter notebook checkpoints
