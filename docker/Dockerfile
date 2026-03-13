@@ -43,7 +43,8 @@ WORKDIR /workspace
 COPY --chown=hostuser:hostuser requirements.txt .
 
 # 7) Python-Pakete installieren
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    nbstripout --install
 
 # 8) Jupyter-Konfiguration (Login-Shell + interaktive Terminals)
 RUN bash -lc "jupyter lab --generate-config && \
