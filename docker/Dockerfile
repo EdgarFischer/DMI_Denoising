@@ -22,8 +22,7 @@ RUN apt-get update && \
         liblapack-dev \
         libopenblas-dev \
         gfortran \
-        build-essential \
-        python3.11-dev && \
+        build-essential && \
     # bash-completion global aktivieren
     echo "if [ -f /etc/bash_completion ]; then . /etc/bash_completion; fi" >> /etc/bash.bashrc && \
     # Host-User anlegen
@@ -43,8 +42,7 @@ WORKDIR /workspace
 COPY --chown=hostuser:hostuser requirements.txt .
 
 # 7) Python-Pakete installieren
-RUN pip install --no-cache-dir -r requirements.txt && \
-    nbstripout --install
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 8) Jupyter-Konfiguration (Login-Shell + interaktive Terminals)
 RUN bash -lc "jupyter lab --generate-config && \
