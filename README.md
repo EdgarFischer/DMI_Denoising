@@ -62,7 +62,7 @@ docker exec -it mrjo bash
 Then run the sanity check:
 
 ```bash
-python3 scripts/sanity_check.py
+python3 DMI_Denoising/scripts/sanity_check.py
 ```
 
 This script generates a small synthetic dataset and launches a short training run using the standard training pipeline.
