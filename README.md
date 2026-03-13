@@ -1,6 +1,76 @@
 # Self-Supervised Spectral–Temporal Denoising for Dynamic DMI
 
-Code accompanying the paper.
+This repository provides a flexible deep-learning framework for denoising complex-valued dynamic DMI / MRSI data using self-supervised learning (Noise2Self).
+
+The framework is designed for multi-dimensional spectroscopic imaging data.  
+Users can freely choose which axes of the data are processed by the network, enabling denoising across spatial, spectral, or temporal dimensions without requiring ground-truth data.
+
+## Features
+
+- **Flexible axis selection**  
+  Any combination of 2–3 axes of the input data can be treated as network dimensions.  
+  This allows training spatial, spectral, temporal, or mixed spatio–spectral-temporal models.
+
+- **Optional channel folding**  
+  One additional axis can be mapped to the channel dimension, allowing the network to process up to four dimensions simultaneously.
+
+- **2D and 3D U-Net architectures**  
+  The model is automatically configured as a 2D or 3D U-Net depending on the selected axes.
+
+- **Self-supervised denoising**  
+  Noise2Self-style masking enables training directly on noisy measurements without clean reference data.
+
+- **Configurable experiments via YAML**  
+  Training parameters, masking strategy, and axis selection are defined in a simple configuration file.
+
+- **Reproducible environment**  
+  Docker environment, automated tests, and CI ensure reproducibility.
+
+## Installation
+
+A Docker environment with all dependencies is provided. Make sure **Docker is installed** on your system before proceeding.
+
+Build the container:
+
+```bash
+bash docker/build_docker.sh
+```
+
+Launch the container:
+
+```
+bash docker/launch_docker.sh
+```
+
+The repository will be mounted inside the container under:
+
+/workspace/DMI_Denoising
+
+## Quick sanity check
+
+To verify that the installation works correctly, start a shell inside the container:
+
+```bash
+docker exec -it mrjo bash
+```
+Then run the sanity check:
+
+```bash
+python3 scripts/sanity_check.py
+```
+
+This script generates a small synthetic dataset and launches a short training run using the standard training pipeline.
+The console output should display training and validation losses, confirming that the full pipeline is working correctly.
+
+## Repository Structure
+
+```text
+src/            Core implementation
+scripts/        Training, inference, and sanity-check entry points
+configs/        YAML configuration files
+tests/          Unit and integration tests
+docker/         Docker build and launch scripts
+notebooks/      Figure-generation and analysis notebooks
 
 ## Requirements
 

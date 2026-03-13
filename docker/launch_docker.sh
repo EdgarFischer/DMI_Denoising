@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+#!/usr/bin/env bash
+set -e
+
+# Move to the directory where this script lives
+cd "$(dirname "$0")"
+
 CONTAINER_NAME="mrjo"
 IMAGE_NAME="deepdenoising"
 
