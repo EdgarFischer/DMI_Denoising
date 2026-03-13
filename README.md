@@ -28,8 +28,14 @@ Users can freely choose which axes of the data are processed by the network, ena
 
 ## Installation
 
-A Docker environment with all dependencies is provided. Make sure **Docker is installed** on your system before proceeding.
+Make sure **Git** and **Docker** are installed on your system.
 
+Clone the repository:
+
+```bash
+git clone https://github.com/EdgarFischer/DMI_Denoising.git
+cd DMI_Denoising
+```
 Build the container:
 
 ```bash
@@ -46,7 +52,7 @@ The repository will be mounted inside the container under:
 
 /workspace/DMI_Denoising
 
-## Quick sanity check
+## Verify installation (quick sanity check)
 
 To verify that the installation works correctly, start a shell inside the container:
 
