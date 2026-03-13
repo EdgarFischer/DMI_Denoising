@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-#!/usr/bin/env bash
-set -e
-
-# Move to the directory where this script lives
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+WORKSPACE="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 CONTAINER_NAME="mrjo"
 IMAGE_NAME="deepdenoising"
 
-# Two levels above docker/  -> e.g. ~/Denoising
-WORKSPACE="$(cd "$(dirname "$0")/../.." && pwd)"
-
-# Repo root = one level above docker/ -> e.g. ~/Denoising/DMI_Denoising
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_NAME="$(basename "$REPO_ROOT")"
 REPO_IN_CONTAINER="/workspace/${REPO_NAME}"
 
@@ -87,7 +80,6 @@ if docker run "${BASE_ARGS[@]}" "${GPU_ARGS[@]}" "${GIT_ARGS[@]}" "${IMAGE_NAME}
 else
   echo "⚠️ GPU not available, launching without GPU..."
 
-  # Remove partially created container from failed GPU start
   docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 
   docker run "${BASE_ARGS[@]}" "${GIT_ARGS[@]}" "${IMAGE_NAME}"
