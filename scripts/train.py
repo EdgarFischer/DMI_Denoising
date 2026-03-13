@@ -63,6 +63,6 @@ if __name__ == "__main__":
 
     shutil.copy(args.config, run_dir / Path(args.config).name)
 
-    print("[env] CUDA_VISIBLE_DEVICES =", os.environ.get("CUDA_VISIBLE_DEVICES"))
+    print("[env] requested gpu =", gpu)
 
     launch_main(cfg, config_path=args.config)
