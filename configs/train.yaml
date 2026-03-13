@@ -8,7 +8,7 @@ data:
   train: ["Simulated_Lesion_double_2_normalized_tMPPCA_5D", "Simulated_Lesion_double_3_normalized_tMPPCA_5D", "Simulated_Lesion_double_4_normalized_tMPPCA_5D", "Simulated_Lesion_double_5_normalized_tMPPCA_5D", "Simulated_Lesion_double_6_normalized_tMPPCA_5D"]
   val:   ["Simulated_Lesion_double_1_normalized_tMPPCA_5D"]
 
-  image_axes: [0, 1, 3]  # those are the 2 axes for the 2D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
+  image_axes: [0, 1, 3]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
   channel_axis: 4     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
   num_samples: 500 #10000  # how many voxels are chosen per epoch
@@ -17,7 +17,7 @@ data:
   normalization: True   # data is automatically normalized
 
 masking:
-  masked_axes: [3]    # global data axes to be masked; can contain one axis (1D mask) or two axes (2D mask)
+  masked_axes: [3]    # global data axes to be masked; can contain one axis (1D mask) or two axes (2D mask). The mask is then replicated along the remaining dimensions.
   num_pixels: 12       # careful: this means masked pixels in the 1D oder 2D mask; the mask is then replicated across the other dimensions
   window_size: 3      # how big is the windows from which neighbors are drawn
 

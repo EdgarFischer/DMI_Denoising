@@ -5,6 +5,15 @@ This repository provides a flexible deep-learning framework for denoising comple
 The framework is designed for multi-dimensional spectroscopic imaging data.  
 Users can freely choose which axes of the data are processed by the network, enabling denoising across spatial, spectral, or temporal dimensions without requiring ground-truth data.
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Data format](#data-format)
+- [Training](#training)
+- [Inference](#inference)
+- [Notebooks](#notebooks)
+
 ## Features
 
 - **Flexible axis selection**  
@@ -28,21 +37,23 @@ Users can freely choose which axes of the data are processed by the network, ena
 
 ## Installation
 
+The project uses a **Docker environment** to ensure a reproducible setup with all required dependencies.
+
 Make sure **Git** and **Docker** are installed on your system.
 
-Clone the repository:
+### 1. Clone repository
 
 ```bash
 git clone https://github.com/EdgarFischer/DMI_Denoising.git
 cd DMI_Denoising
 ```
-Build the container:
+### 2. Build Docker container
 
 ```bash
 bash docker/build_docker.sh
 ```
 
-Launch the container:
+### 3. Launch container
 
 ```
 bash docker/launch_docker.sh
@@ -52,7 +63,7 @@ The repository will be mounted inside the container under:
 
 /workspace/DMI_Denoising
 
-## Verify installation (quick sanity check)
+### 4. Verify installation (Quick sanity check)
 
 To verify that the installation works correctly, start a shell inside the container:
 
@@ -68,67 +79,80 @@ python3 DMI_Denoising/scripts/sanity_check.py
 This script generates a small synthetic dataset and launches a short training run using the standard training pipeline.
 The console output should display training and validation losses, confirming that the full pipeline is working correctly.
 
-## Repository Structure
+## Data format
 
-```text
-src/            Core implementation
-scripts/        Training, inference, and sanity-check entry points
-configs/        YAML configuration files
-tests/          Unit and integration tests
-docker/         Docker build and launch scripts
-notebooks/      Figure-generation and analysis notebooks
+Dynamic DMI data are expected in the form
 
-## Requirements
+(x, y, z, t, T)
 
-A Docker environment with all dependencies is provided in the `docker/` directory.
+where
 
-## Data
+- x, y, z denote spatial dimensions  
+- t denotes the spectral dimension (FID)  
+- T denotes the repetition / dynamic dimension  
 
-Dynamic DMI data are expected in the format
+The last dimension is optional, so the data may also be 4D.
 
-(x, y, z, t, T),
+Input data can be provided either as
 
-where x, y, z denote spatial dimensions, t the FID index, and T the repetition index.
+- a NumPy file `data.npy` containing a complex array with shape `(x, y, z, t, T)`
+- a MATLAB file `CombinedCSI.mat`, where the data are stored in `csi.Data`
 
-The data can be provided either as
-
-- a NumPy file `data.npy` containing a complex array with shape `(x, y, z, t, T)`, or
-- a MATLAB file `CombinedCSI.mat` using the internal group format where the data are stored in  
-  `csi.Data`.
-
-In both cases the loaded data must correspond to a 5D array with shape `(x, y, z, t, T)`.
-
-Details on the acquisition protocol and data availability are described in the paper.
+Internally, the pipeline standardizes the input format for consistent downstream processing.
 
 ## Training
 
-To train the denoising network, run:
+Training is launched via
 
-python scripts/train.py
+```bash
+python3 scripts/train.py
+```
 
-or use scripts/train.sh 
+or (using nohup so the process continues running in the background)
 
-Training parameters can be configured in:
+```bash
+bash scripts/train.sh
+```
+
+Training parameters are defined in
 
 configs/train.yaml
 
+The configuration file specifies e.g.
+
+- datasets used for training and validation
+- which axes of the data are processed by the network (`image_axes`)
+- optional channel folding (`channel_axis`)
+- the masking strategy used for Noise2Self training
+- model architecture and optimization parameters
+
+See `configs/train.yaml` for a fully documented example configuration.
+
+During training, the configuration file and the relevant source code are automatically copied to the experiment directory to ensure full reproducibility.
+
 ## Inference
 
-An example inference script is provided in `scripts/infer.sh`, which
-demonstrates how to run the denoising pipeline with the correct arguments.
+An example inference script is provided in
 
-Run:
+scripts/infer.sh
 
+```bash
 bash scripts/infer.sh
+```
+to apply a trained model to new data.
+
+The script loads a trained checkpoint and applies the denoising network to the specified input dataset.
+Input and output paths as well as model parameters can be configured inside the script.
+
+For reproducibility, inference can be run using the same train.yaml configuration that was saved automatically in the model directory during training.
+This ensures that the model is applied with the same axis configuration and preprocessing settings that were used during training.
+
+The denoising pipeline can also be called directly from Python (e.g. in notebooks) using the provided inference API.
 
 ## Notebooks
 
-Jupyter notebooks used to generate the figures shown in the paper are
-provided in the `notebooks/` directory.
+Example notebooks for visualizing denoising results are provided in the `notebooks/` directory.
 
-These notebooks assume that metabolite quantification has already been
-performed. The quantification step (e.g. LCModel fitting) is **not**
-part of this repository.
+One notebook (EvaluateModelBeforeFitting) demonstrates how to compare noisy and denoised data directly from the network output.
 
-The notebooks operate on metabolite maps generated by the in-house
-quantification pipeline.
+Additional notebooks reproduce figures used in the associated research workflow and require external metabolite quantification software, which is not part of this repository.
