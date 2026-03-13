@@ -38,6 +38,7 @@ trained_models/
 *.png
 *.jpg
 *.m
+*.mat
 src/denoising/data/Tensor-MP-PCA-main/
 
 
