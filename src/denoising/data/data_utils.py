@@ -58,44 +58,121 @@ def load_and_preprocess_data(
 
     return np.concatenate(arrays, axis=-1)
 
-# def low_rank_5d(data, rank):
-#     """
-#     Computes a low-rank decomposition of a tensor with shape (22, 22, 21, 96, 8)
-#     using truncated SVD.
+def load_dataset_list_from_folders(
+    folder_names,
+    base_path,
+    fourier_axes=None,
+    normalization=True
+):
+    """
+    Wrapper um load_and_preprocess_data, der statt eines gestackten Arrays
+    eine Liste einzelner Datensätze zurückgibt.
 
-#     Args:
-#         data (np.ndarray): Numpy array of shape (x, y, z, t, T).
-#         rank (int): The number of singular values to keep (final rank).
+    Returns
+    -------
+    dataset_list : list of np.ndarray
+        Liste von Arrays mit Shape (X, Y, Z, t/f, T)
+    """
 
-#     Returns:
-#         np.ndarray: The reconstructed tensor with rank 'rank'.
-#     """
+    stacked = load_and_preprocess_data(
+        folder_names=folder_names,
+        base_path=base_path,
+        fourier_axes=fourier_axes,
+        normalization=normalization
+    )
 
-#     # Unpack dimensions
-#     x, y, z, t, T = data.shape
+    dataset_list = [stacked[..., i] for i in range(stacked.shape[-1])]
+    return dataset_list
+
+def load_dataset_list(
+    subject_ids,
+    method=None,
+    base_dir="../datasets",
+    suffix="normalized",
+    fourier_axes=None,
+    normalization=False
+):
+    folder_names = [
+        f"{sid}_{suffix}" if method is None else f"{sid}_{suffix}_{method}"
+        for sid in subject_ids
+    ]
+
+    return load_dataset_list_from_folders(
+        folder_names=folder_names,
+        base_path=base_dir,
+        fourier_axes=fourier_axes,
+        normalization=normalization
+    )
+
+def low_rank_5d(data, rank):
+    """
+    Computes a low-rank decomposition of a tensor with shape (22, 22, 21, 96, 8)
+    using truncated SVD.
+
+    Args:
+        data (np.ndarray): Numpy array of shape (x, y, z, t, T).
+        rank (int): The number of singular values to keep (final rank).
+
+    Returns:
+        np.ndarray: The reconstructed tensor with rank 'rank'.
+    """
+
+    # Unpack dimensions
+    x, y, z, t, T = data.shape
     
-#     # Reshape the 5D tensor into a 2D matrix of shape (x*y*z, t*T)
-#     # Use 'F' (Fortran) order to match MATLAB's column-major ordering
-#     reshaped_matrix = data.reshape((x * y * z * T, t), order='F')
+    # Reshape the 5D tensor into a 2D matrix of shape (x*y*z, t*T)
+    # Use 'F' (Fortran) order to match MATLAB's column-major ordering
+    reshaped_matrix = data.reshape((x * y * z * T, t), order='F')
     
-#     # Perform economy-size SVD (similar to MATLAB's "svd(..., 'econ')")
-#     U, singular_values, Vh = np.linalg.svd(reshaped_matrix, full_matrices=False)
+    # Perform economy-size SVD (similar to MATLAB's "svd(..., 'econ')")
+    U, singular_values, Vh = np.linalg.svd(reshaped_matrix, full_matrices=False)
     
-#     # Truncate the singular values to the desired rank
-#     k = min(rank, len(singular_values))  # safeguard: rank cannot exceed # of singular values
-#     singular_values_truncated = np.zeros_like(singular_values)
-#     singular_values_truncated[:k] = singular_values[:k]
+    # Truncate the singular values to the desired rank
+    k = min(rank, len(singular_values))  # safeguard: rank cannot exceed # of singular values
+    singular_values_truncated = np.zeros_like(singular_values)
+    singular_values_truncated[:k] = singular_values[:k]
     
-#     # Form the diagonal matrix of truncated singular values
-#     S_truncated = np.diag(singular_values_truncated)
+    # Form the diagonal matrix of truncated singular values
+    S_truncated = np.diag(singular_values_truncated)
     
-#     # Reconstruct the matrix using the truncated SVD components
-#     reconstructed_matrix = U @ S_truncated @ Vh
+    # Reconstruct the matrix using the truncated SVD components
+    reconstructed_matrix = U @ S_truncated @ Vh
     
-#     # Reshape back to the original 5D shape, again using 'F' order
-#     reconstructed_tensor = reconstructed_matrix.reshape((x, y, z, t, T), order='F')
+    # Reshape back to the original 5D shape, again using 'F' order
+    reconstructed_tensor = reconstructed_matrix.reshape((x, y, z, t, T), order='F')
     
-#     return reconstructed_tensor
+    return reconstructed_tensor
+
+def apply_low_rank_5d_to_dataset_list(dataset_list, rank):
+    """
+    Wendet low_rank_5d auf eine Liste von 5D-Datensätzen an.
+
+    Parameters
+    ----------
+    dataset_list : list of np.ndarray
+        Liste von Arrays mit Shape (x, y, z, t, T)
+    rank : int
+        Zielrang für die truncierte SVD
+
+    Returns
+    -------
+    lowrank_list : list of np.ndarray
+        Liste der rekonstruierten 5D-Datensätze
+    """
+
+    lowrank_list = []
+
+    for i, data in enumerate(dataset_list):
+        if data.ndim != 5:
+            raise ValueError(
+                f"Datensatz an Index {i} hat ndim={data.ndim}, erwartet wird 5D"
+            )
+
+        print(f"Applying low-rank to dataset {i+1}/{len(dataset_list)} with shape {data.shape}")
+        reconstructed = low_rank_5d(data, rank)
+        lowrank_list.append(reconstructed)
+
+    return lowrank_list
 
 # def low_rank(data: np.ndarray, rank: int) -> np.ndarray:
 #     """
