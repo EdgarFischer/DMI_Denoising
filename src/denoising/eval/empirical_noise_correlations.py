@@ -239,6 +239,22 @@ def estimate_spatial_correlations(
             mask2 = mask_noise[tuple(slicer2[:3])]
             valid_pairs = mask1 & mask2
 
+            # # 🔍 DEBUG START
+            # n_pairs = np.count_nonzero(valid_pairs)
+
+            # if n_pairs == 0:
+            #     print(f"[{axis_name}] lag={lag:2d} | pairs=0")
+            #     continue
+
+            # # flatten
+            # arr1 = data1[valid_pairs].reshape(-1)
+            # arr2 = data2[valid_pairs].reshape(-1)
+
+            # n_samples = arr1.size
+
+            # print(f"[{axis_name}] lag={lag:2d} | pairs={n_pairs:5d} | samples={n_samples:7d}")
+            # # 🔍 DEBUG END
+
             if not np.any(valid_pairs):
                 continue
 

@@ -117,7 +117,8 @@ def plot_spatial_acf_comparison(
     skip_lag0=True,
     show_std=True,
     title=None,
-    figsize=(12, 4)
+    figsize=(12, 4),
+    max_lag_plot=None   # 👈 NEU
 ):
     """
     Vergleicht räumliche ACFs (x, y, z) mehrerer Methoden.
@@ -125,28 +126,15 @@ def plot_spatial_acf_comparison(
     Parameters
     ----------
     spatial_stats_by_method : dict
-        {
-            "Method name": (mean_corrs, std_corrs),
-            ...
-        }
-        wobei mean_corrs["x"], ["y"], ["z"] Arrays sind
-
     methods : list of str, optional
-        Welche Methoden geplottet werden sollen
-
     axes_to_plot : tuple of str
-        Welche Achsen geplottet werden sollen ("x", "y", "z")
-
     skip_lag0 : bool
-        Ob lag 0 übersprungen werden soll
-
     show_std : bool
-        Ob Standardabweichung geplottet wird
-
     title : str, optional
-
     figsize : tuple
-        Maximale Figure-Größe für drei Plots
+    max_lag_plot : int or None
+        Maximale Anzahl Lags die geplottet werden (z. B. 6 oder 8).
+        Wenn None → alle Lags.
     """
 
     if methods is None:
@@ -155,7 +143,6 @@ def plot_spatial_acf_comparison(
     axes_to_plot = list(axes_to_plot)
     n_plots = len(axes_to_plot)
 
-    # 👉 gleiche Logik wie bei t/T: dynamische Breite
     max_width = figsize[0]
     width_per_plot = max_width / 3
     fig_width = width_per_plot * n_plots
@@ -183,16 +170,24 @@ def plot_spatial_acf_comparison(
             std_acf = std_corrs[ax_name]
 
             start = 0 if skip_lag0 else 0
-            lags = np.arange(start, len(mean_acf))
 
-            ax.plot(lags, mean_acf[start:], 'o-', label=method)
+            N = len(mean_acf)
+
+            if max_lag_plot is None:
+                end = N
+            else:
+                end = min(max_lag_plot, N)
+
+            lags = np.arange(start, end)
+
+            ax.plot(lags, mean_acf[start:end], 'o-', label=method)
             any_plotted = True
 
             if show_std:
                 ax.fill_between(
                     lags,
-                    mean_acf[start:] - std_acf[start:],
-                    mean_acf[start:] + std_acf[start:],
+                    mean_acf[start:end] - std_acf[start:end],
+                    mean_acf[start:end] + std_acf[start:end],
                     alpha=0.2
                 )
 
