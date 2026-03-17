@@ -88,14 +88,36 @@ def load_dataset_list(
     subject_ids,
     method=None,
     base_dir="../datasets",
-    suffix="normalized",
+    suffix=None,
     fourier_axes=None,
     normalization=False
 ):
-    folder_names = [
-        f"{sid}_{suffix}" if method is None else f"{sid}_{suffix}_{method}"
-        for sid in subject_ids
-    ]
+    """
+    Lädt mehrere Datensätze aus Ordnern.
+
+    Parameters
+    ----------
+    subject_ids : list of str
+    method : str or None
+    base_dir : str
+    suffix : str or None
+        Optionaler Suffix (z. B. "normalized").
+        Wenn None oder "" → kein Suffix wird verwendet.
+    """
+
+    folder_names = []
+
+    for sid in subject_ids:
+        parts = [sid]
+
+        if suffix not in (None, ""):
+            parts.append(suffix)
+
+        if method is not None:
+            parts.append(method)
+
+        folder_name = "_".join(parts)
+        folder_names.append(folder_name)
 
     return load_dataset_list_from_folders(
         folder_names=folder_names,

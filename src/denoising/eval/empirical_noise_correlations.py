@@ -413,6 +413,20 @@ def compute_spatial_acf_mean_std(spatial_corrs_list):
 
     return mean_corrs, std_corrs
 
+def _build_load_kwargs(suffix="normalized", base_dir=None, method=None):
+    kwargs = {}
+
+    if suffix not in (None, ""):
+        kwargs["suffix"] = suffix
+
+    if base_dir is not None:
+        kwargs["base_dir"] = base_dir
+
+    if method is not None:
+        kwargs["method"] = method
+
+    return kwargs
+
 def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", base_dir=None):
     """
     Returns a dataset list for one method.
@@ -420,24 +434,25 @@ def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", 
     mtype = method_cfg["type"]
 
     if mtype == "raw":
-        kwargs = {"suffix": suffix}
-        if base_dir is not None:
-            kwargs["base_dir"] = base_dir
+        kwargs = _build_load_kwargs(
+            suffix=suffix,
+            base_dir=base_dir,
+        )
         return load_dataset_list(subject_ids, **kwargs)
 
     if mtype == "precomputed":
-        kwargs = {
-            "suffix": suffix,
-            "method": method_cfg["method"],
-        }
-        if base_dir is not None:
-            kwargs["base_dir"] = base_dir
+        kwargs = _build_load_kwargs(
+            suffix=suffix,
+            base_dir=base_dir,
+            method=method_cfg["method"],
+        )
         return load_dataset_list(subject_ids, **kwargs)
 
     if mtype == "callable":
-        kwargs = {"suffix": suffix}
-        if base_dir is not None:
-            kwargs["base_dir"] = base_dir
+        kwargs = _build_load_kwargs(
+            suffix=suffix,
+            base_dir=base_dir,
+        )
         raw_list = load_dataset_list(subject_ids, **kwargs)
 
         fn = method_cfg["fn"]
@@ -486,9 +501,10 @@ def run_noise_analysis_pipeline(
 
     raw_list = None
     if mask_source == "raw":
-        kwargs = {"suffix": suffix}
-        if base_dir is not None:
-            kwargs["base_dir"] = base_dir
+        kwargs = _build_load_kwargs(
+            suffix=suffix,
+            base_dir=base_dir,
+        )
         raw_list = load_dataset_list(subject_ids, **kwargs)
 
     for method_name, method_cfg in methods.items():
