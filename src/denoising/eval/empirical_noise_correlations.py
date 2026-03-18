@@ -50,7 +50,8 @@ def estimate_1d_acf_from_masked_voxels(data, mask_noise, subtract_mean=True, nor
     Schätzt 1D-Autokorrelationen entlang der nicht-räumlichen Achsen,
     nachdem eine 3D-räumliche Noise-Maske angewendet wurde.
 
-    Der Mittelwert wird aus dem gesamten Ensemble geschätzt (nicht pro Sequenz).
+    Der Erwartungswert der Autokovarianz wird empirisch über alle
+    verfügbaren Realisationen und überlappenden Samples pro Lag geschätzt.
 
     Parameters
     ----------
@@ -77,8 +78,10 @@ def estimate_1d_acf_from_masked_voxels(data, mask_noise, subtract_mean=True, nor
     if mask_noise.shape != data.shape[:3]:
         raise ValueError("mask_noise muss Shape data.shape[:3] haben")
 
-    # Noise-Voxel extrahieren
     noise_data = data[mask_noise]   # shape (N_voxels, ...)
+
+    if noise_data.shape[0] == 0:
+        raise ValueError("mask_noise enthält keine True-Voxel")
 
     remaining_shape = noise_data.shape[1:]
     n_remaining = len(remaining_shape)
@@ -86,7 +89,6 @@ def estimate_1d_acf_from_masked_voxels(data, mask_noise, subtract_mean=True, nor
     acfs = []
 
     for ax in range(n_remaining):
-
         L = remaining_shape[ax]
 
         # Zielachse ans Ende
@@ -97,14 +99,20 @@ def estimate_1d_acf_from_masked_voxels(data, mask_noise, subtract_mean=True, nor
             mean_axis = arr.mean(axis=tuple(range(arr.ndim - 1)), keepdims=True)
             arr = arr - mean_axis
 
-        # alles flatten -> viele Realisationen
+        # viele Realisationen x Sequenzlänge
         arr = arr.reshape(-1, L)
+        n_realizations = arr.shape[0]
 
         acf = np.zeros(L, dtype=np.float64)
 
         for lag in range(L):
-            num = np.sum(arr[:, :L-lag] * np.conj(arr[:, lag:]))
-            acf[lag] = np.real(num)
+            seg1 = arr[:, :L - lag]
+            seg2 = arr[:, lag:]
+
+            num = np.sum(seg1 * np.conj(seg2))
+            n_pairs = n_realizations * (L - lag)
+
+            acf[lag] = np.real(num) / n_pairs
 
         if normalize and acf[0] > 0:
             acf = acf / acf[0]
@@ -167,12 +175,17 @@ def estimate_spatial_correlations(
     normalize=True
 ):
     """
-    Schätzt räumliche Korrelationen entlang x, y und z
+    Schätzt räumliche Autokorrelationen entlang x, y und z
     in noise-dominierten Voxeln.
 
     Es werden nur Voxelpaare berücksichtigt, bei denen beide Voxel
     in der Noise-Maske liegen. Alle nicht-räumlichen Dimensionen
     werden als Ensemble-Dimensionen verwendet.
+
+    Die Autokovarianz für jeden Lag wird empirisch als Mittelwert
+    über alle gültigen Produkte geschätzt. Falls normalize=True,
+    wird anschließend durch den Wert bei Lag 0 dividiert, sodass
+    eine normierte Autokorrelationsfunktion mit ACF(0)=1 entsteht.
 
     Parameters
     ----------
@@ -239,22 +252,6 @@ def estimate_spatial_correlations(
             mask2 = mask_noise[tuple(slicer2[:3])]
             valid_pairs = mask1 & mask2
 
-            # # 🔍 DEBUG START
-            # n_pairs = np.count_nonzero(valid_pairs)
-
-            # if n_pairs == 0:
-            #     print(f"[{axis_name}] lag={lag:2d} | pairs=0")
-            #     continue
-
-            # # flatten
-            # arr1 = data1[valid_pairs].reshape(-1)
-            # arr2 = data2[valid_pairs].reshape(-1)
-
-            # n_samples = arr1.size
-
-            # print(f"[{axis_name}] lag={lag:2d} | pairs={n_pairs:5d} | samples={n_samples:7d}")
-            # # 🔍 DEBUG END
-
             if not np.any(valid_pairs):
                 continue
 
@@ -265,23 +262,14 @@ def estimate_spatial_correlations(
                 arr1 = arr1 - np.mean(arr1)
                 arr2 = arr2 - np.mean(arr2)
 
-            num = np.sum(arr1 * np.conj(arr2))
-            num = np.real(num)
+            n_pairs = arr1.size
+            if n_pairs == 0:
+                continue
 
-            if normalize:
-                den1 = np.sum(np.abs(arr1) ** 2)
-                den2 = np.sum(np.abs(arr2) ** 2)
+            cov = np.sum(arr1 * np.conj(arr2)) / n_pairs
+            corr_values[lag] = np.real(cov)
 
-                if den1 > 0 and den2 > 0:
-                    corr = num / np.sqrt(den1 * den2)
-                else:
-                    corr = np.nan
-            else:
-                corr = num
-
-            corr_values[lag] = corr
-
-        if normalize and np.isfinite(corr_values[0]) and corr_values[0] != 0:
+        if normalize and np.isfinite(corr_values[0]) and corr_values[0] > 0:
             corr_values = corr_values / corr_values[0]
 
         spatial_corrs[axis_name] = corr_values
