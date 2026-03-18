@@ -206,3 +206,178 @@ def plot_spatial_acf_comparison(
         plt.tight_layout()
 
     plt.show()
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def plot_averaged_signal_comparison(
+    results,
+    methods=None,
+    show_std=True,
+    title="Averaged signal in all voxels vs. noise-dominated voxels",
+    figsize=(12, 8),
+):
+    """
+    Plottet für jede Methode den Betrag des gemittelten Signals
+    in all voxels vs. noise-dominated voxels, entlang der in
+    results["extra_axes"] angegebenen Nicht-Raum-Achsen.
+
+    Für 5D-Daten mit extra_axes=["t", "T"]:
+        - entlang t: Mittelung über Raum + T
+        - entlang T: Mittelung über Raum + t
+
+    Für 4D-Daten mit extra_axes=["t"]:
+        - entlang t: Mittelung über Raum
+
+    Parameters
+    ----------
+    results : dict
+        Ausgabe von run_noise_analysis_pipeline(...)
+    methods : list of str, optional
+        Welche Methoden geplottet werden sollen.
+        Falls None, werden alle Methoden verwendet.
+    show_std : bool
+        Ob Standardabweichungen über Subjects als Schattierung
+        dargestellt werden sollen.
+    title : str
+        Figure-Titel.
+    figsize : tuple
+        Basisgröße der Figure.
+    """
+
+    datasets_by_method = results["datasets_by_method"]
+    masks_by_method = results["masks_by_method"]
+    extra_axes = results["extra_axes"]
+
+    if methods is None:
+        methods = list(datasets_by_method.keys())
+
+    n_methods = len(methods)
+    n_axes = len(extra_axes)
+
+    if n_methods == 0:
+        raise ValueError("No methods to plot.")
+    if n_axes == 0:
+        raise ValueError("results['extra_axes'] is empty.")
+
+    fig, axes = plt.subplots(
+        n_methods,
+        n_axes,
+        figsize=(figsize[0], max(figsize[1], 3 * n_methods)),
+        squeeze=False
+    )
+
+    for row, method in enumerate(methods):
+        if method not in datasets_by_method:
+            raise ValueError(f"Method '{method}' not found in results['datasets_by_method']")
+        if method not in masks_by_method:
+            raise ValueError(f"Method '{method}' not found in results['masks_by_method']")
+
+        dataset_list = datasets_by_method[method]
+        mask_list = masks_by_method[method]
+
+        if len(dataset_list) != len(mask_list):
+            raise ValueError(f"Dataset/mask length mismatch for method '{method}'")
+
+        per_axis_all = {ax_name: [] for ax_name in extra_axes}
+        per_axis_noise = {ax_name: [] for ax_name in extra_axes}
+
+        for data, mask_noise in zip(dataset_list, mask_list):
+            if mask_noise.shape != data.shape[:3]:
+                raise ValueError("mask_noise must have shape data.shape[:3]")
+
+            noise_data = data[mask_noise]  # shape: (N_voxels, ...)
+
+            if noise_data.shape[0] == 0:
+                continue
+
+            # 4D: (x, y, z, t)
+            # noise_data -> (N_voxels, t)
+            if data.ndim == 4:
+                if "t" not in extra_axes:
+                    raise ValueError("For 4D data, extra_axes must contain 't'.")
+
+                mean_noise_t = np.abs(np.mean(noise_data, axis=0))       # (t,)
+                mean_all_t = np.abs(np.mean(data, axis=(0, 1, 2)))       # (t,)
+
+                per_axis_noise["t"].append(mean_noise_t)
+                per_axis_all["t"].append(mean_all_t)
+
+            # 5D: (x, y, z, t, T)
+            # noise_data -> (N_voxels, t, T)
+            elif data.ndim == 5:
+                if "t" in extra_axes:
+                    mean_noise_t = np.abs(np.mean(noise_data, axis=(0, 2)))   # (t,)
+                    mean_all_t = np.abs(np.mean(data, axis=(0, 1, 2, 4)))     # (t,)
+                    per_axis_noise["t"].append(mean_noise_t)
+                    per_axis_all["t"].append(mean_all_t)
+
+                if "T" in extra_axes:
+                    mean_noise_T = np.abs(np.mean(noise_data, axis=(0, 1)))   # (T,)
+                    mean_all_T = np.abs(np.mean(data, axis=(0, 1, 2, 3)))     # (T,)
+                    per_axis_noise["T"].append(mean_noise_T)
+                    per_axis_all["T"].append(mean_all_T)
+
+            else:
+                raise ValueError(f"Unsupported data.ndim={data.ndim}. Expected 4 or 5.")
+
+        for col, ax_name in enumerate(extra_axes):
+            ax = axes[row, col]
+
+            all_curves = per_axis_all[ax_name]
+            noise_curves = per_axis_noise[ax_name]
+
+            if len(all_curves) == 0 or len(noise_curves) == 0:
+                ax.set_visible(False)
+                continue
+
+            min_len_all = min(len(a) for a in all_curves)
+            min_len_noise = min(len(a) for a in noise_curves)
+            min_len = min(min_len_all, min_len_noise)
+
+            all_stack = np.stack([a[:min_len] for a in all_curves], axis=0)
+            noise_stack = np.stack([a[:min_len] for a in noise_curves], axis=0)
+
+            mean_all = np.mean(all_stack, axis=0)
+            std_all = np.std(all_stack, axis=0)
+
+            mean_noise = np.mean(noise_stack, axis=0)
+            std_noise = np.std(noise_stack, axis=0)
+
+            x = np.arange(min_len)
+
+            ax.plot(x, mean_all, 'o-', label="all voxels")
+            ax.plot(x, mean_noise, 'o-', label="noise voxels")
+
+            if show_std:
+                ax.fill_between(
+                    x,
+                    mean_all - std_all,
+                    mean_all + std_all,
+                    alpha=0.2
+                )
+                ax.fill_between(
+                    x,
+                    mean_noise - std_noise,
+                    mean_noise + std_noise,
+                    alpha=0.2
+                )
+
+            xlabel = "FID point t" if ax_name == "t" else f"{ax_name}"
+            if ax_name == "T":
+                xlabel = "Repetition T"
+
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("|mean signal|")
+            ax.set_title(f"{method} — along {ax_name}")
+            ax.grid(True)
+            ax.legend()
+
+    if title is not None:
+        fig.suptitle(title)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+    else:
+        plt.tight_layout()
+
+    plt.show()
