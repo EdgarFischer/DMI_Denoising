@@ -151,8 +151,10 @@ The denoising pipeline can also be called directly from Python (e.g. in notebook
 
 ## Notebooks
 
-Example notebooks for visualizing denoising results are provided in the `notebooks/` directory.
+Example notebooks for visualizing denoising results are provided in the notebooks/ directory.
 
-One notebook (EvaluateModelBeforeFitting) demonstrates how to compare noisy and denoised data directly from the network output.
+The notebook EvaluateModelBeforeFitting demonstrates how to directly compare noisy and denoised data from the network output.
 
-Additional notebooks reproduce figures used in the associated research workflow and require external metabolite quantification software, which is not part of this repository.
+EmpiricalNoiseCorrelations can be used to estimate noise correlations empirically for any 4D or 5D MRSI dataset along each of its axes. This is important for identifying which dimensions are suitable for self-supervised training.
+
+Additional notebooks reproduce figures from the associated research workflow. These require external metabolite quantification software, which is not included in this repository.
