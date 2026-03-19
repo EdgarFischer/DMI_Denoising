@@ -363,3 +363,165 @@ def plot_averaged_signal_comparison(
         plt.tight_layout()
 
     plt.show()
+
+def plot_mean_fid_with_noise_mask(
+    results,
+    methods=None,
+    fid_axis=3,
+    show_std=True,
+    title="Mean FID with noise mask",
+    figsize=(8, 4),
+):
+    """
+    Plottet den gemittelten FID-Betrag aus results und markiert die verwendete Noise-Maske.
+
+    WICHTIG:
+    Es wird erst über alle anderen Dimensionen gemittelt und DANACH der Betrag genommen:
+        curve(t) = | mean(data over all axes except fid_axis) |
+
+    Parameters
+    ----------
+    results : dict
+        Ausgabe von run_noise_analysis_pipeline(...)
+    methods : list of str or None
+        Welche Methoden geplottet werden sollen. Falls None: alle.
+    fid_axis : int
+        Index der FID-Achse, standardmäßig 3
+    show_std : bool
+        Ob ±1 std über Datensätze geplottet werden soll
+    title : str
+    figsize : tuple
+        Basisgröße pro Plot
+    """
+
+    datasets_by_method = results["datasets_by_method"]
+    masks_by_method = results["masks_by_method"]
+
+    if methods is None:
+        methods = list(datasets_by_method.keys())
+
+    n_methods = len(methods)
+    fig, axes = plt.subplots(
+        n_methods, 1,
+        figsize=(figsize[0], figsize[1] * n_methods),
+        squeeze=False
+    )
+
+    axes = axes[:, 0]
+
+    for row, method in enumerate(methods):
+        ax = axes[row]
+
+        if method not in datasets_by_method:
+            raise ValueError(f"Method '{method}' not found in results['datasets_by_method']")
+        if method not in masks_by_method:
+            raise ValueError(f"Method '{method}' not found in results['masks_by_method']")
+
+        dataset_list = datasets_by_method[method]
+        mask_list = masks_by_method[method]
+
+        if len(dataset_list) != len(mask_list):
+            raise ValueError(f"Dataset/mask length mismatch for method '{method}'")
+
+        curves = []
+        mask_profiles = []
+
+        for data, mask in zip(dataset_list, mask_list):
+            if data.shape != mask.shape:
+                raise ValueError("mask must have same shape as data")
+
+            if fid_axis >= data.ndim:
+                raise ValueError(
+                    f"fid_axis={fid_axis} invalid for data.ndim={data.ndim}"
+                )
+
+            mean_axes = tuple(ax_i for ax_i in range(data.ndim) if ax_i != fid_axis)
+
+            # erst mitteln, dann Betrag
+            curve = np.abs(np.mean(data, axis=mean_axes))
+            curves.append(curve)
+
+            # mask auf 1D entlang FID reduzieren
+            # bei deinen broadcasteten Masken sollte das exakt 0/1 sein
+            mask_profile = np.mean(mask.astype(float), axis=mean_axes)
+            mask_profiles.append(mask_profile)
+
+        min_len = min(len(c) for c in curves)
+        curves = [c[:min_len] for c in curves]
+        mask_profiles = [m[:min_len] for m in mask_profiles]
+
+        curve_stack = np.stack(curves, axis=0)
+        mask_stack = np.stack(mask_profiles, axis=0)
+
+        mean_curve = np.mean(curve_stack, axis=0)
+        std_curve = np.std(curve_stack, axis=0)
+
+        # mittlere Maskenbelegung über Datensätze
+        mean_mask_profile = np.mean(mask_stack, axis=0)
+
+        # robust zu kleinen numerischen Effekten
+        mask_1d = mean_mask_profile > 0.5
+
+        x = np.arange(min_len)
+
+        # Noise-Regionen hinterlegen
+        segments = _find_true_segments(mask_1d)
+        first_segment = True
+        for start, end in segments:
+            label = "noise mask" if first_segment else None
+            ax.axvspan(start, end - 1, alpha=0.18, label=label)
+            ax.axvline(start, linestyle="--", alpha=0.7)
+            ax.axvline(end - 1, linestyle="--", alpha=0.7)
+            first_segment = False
+
+        ax.plot(x, mean_curve, "o-", label="|mean FID|")
+
+        if show_std:
+            ax.fill_between(
+                x,
+                mean_curve - std_curve,
+                mean_curve + std_curve,
+                alpha=0.2
+            )
+
+        ax.set_xlabel("FID point t")
+        ax.set_ylabel("|mean signal|")
+        ax.set_title(method)
+        ax.grid(True)
+        ax.legend()
+
+    if title is not None:
+        fig.suptitle(title)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+    else:
+        plt.tight_layout()
+
+    plt.show()
+
+def _find_true_segments(mask_1d):
+    """
+    Findet zusammenhängende True-Segmente in einer 1D-Bool-Maske.
+
+    Returns
+    -------
+    segments : list of tuple
+        Liste von (start, end)-Intervallen, wobei end exklusiv ist.
+    """
+    mask_1d = np.asarray(mask_1d, dtype=bool)
+    segments = []
+
+    in_segment = False
+    start = None
+
+    for i, val in enumerate(mask_1d):
+        if val and not in_segment:
+            start = i
+            in_segment = True
+        elif not val and in_segment:
+            segments.append((start, i))
+            in_segment = False
+
+    if in_segment:
+        segments.append((start, len(mask_1d)))
+
+    return segments

@@ -52,6 +52,107 @@ def estimate_noise_masks(dataset_list, percentile=5, axes=(3, 4)):
 
     return masks
 
+def estimate_fid_noise_masks(dataset_list, percentile=30, fid_axis=3):
+    """
+    Schätzt FID-Noise-Masken für mehrere Datensätze.
+
+    Idee:
+    Es wird über alle Achsen außer der FID-Achse gemittelt.
+    Dadurch entsteht ein 1D-Profil entlang der FID-Achse.
+    FID-Punkte mit kleiner mittlerer Amplitude werden als noise-dominiert
+    betrachtet.
+
+    Parameters
+    ----------
+    dataset_list : list of np.ndarray
+        Liste von Datenarrays, z. B. Shape (x, y, z, t) oder (x, y, z, t, T)
+    percentile : float
+        Prozentualer Threshold für Noise-FID-Punkte.
+        Beispiel: 30 bedeutet, dass die 30% FID-Punkte mit kleinster
+        mittlerer Amplitude als Noise markiert werden.
+    fid_axis : int
+        Index der FID-Achse, standardmäßig 3
+
+    Returns
+    -------
+    masks : list of np.ndarray
+        Liste von Bool-Masken mit derselben Shape wie die jeweiligen Datenarrays
+    """
+    masks = []
+
+    for data in dataset_list:
+        if fid_axis >= data.ndim:
+            raise ValueError(
+                f"fid_axis={fid_axis} ist ungültig für data.ndim={data.ndim}"
+            )
+
+        mean_axes = tuple(ax for ax in range(data.ndim) if ax != fid_axis)
+
+        averaged = np.abs(np.mean(data, axis=mean_axes))   # shape (t,)
+        thr = np.percentile(averaged, percentile)
+        mask_noise = averaged <= thr                       # shape (t,)
+
+        # auf volle Datenshape erweitern
+        shape = [1] * data.ndim
+        shape[fid_axis] = data.shape[fid_axis]
+        mask_noise = mask_noise.reshape(shape)
+        mask_noise = np.broadcast_to(mask_noise, data.shape)
+
+        masks.append(mask_noise)
+
+    return masks
+
+def estimate_fid_window_masks(
+    dataset_list,
+    fid_axis=3,
+    start_fraction=0.3,
+    end_fraction=0.9,
+):
+    """
+    Erzeugt zusammenhängende FID-Fenster-Masken.
+
+    Parameters
+    ----------
+    dataset_list : list of np.ndarray
+    fid_axis : int
+        Index der FID-Achse
+    start_fraction : float
+        Start des Fensters relativ zur FID-Länge, z. B. 0.3
+    end_fraction : float
+        Ende des Fensters relativ zur FID-Länge, z. B. 0.9
+
+    Returns
+    -------
+    masks : list of np.ndarray
+        Bool-Masken mit derselben Shape wie data
+    """
+    if not (0 <= start_fraction < end_fraction <= 1):
+        raise ValueError("Require 0 <= start_fraction < end_fraction <= 1")
+
+    masks = []
+
+    for data in dataset_list:
+        if fid_axis >= data.ndim:
+            raise ValueError(
+                f"fid_axis={fid_axis} ist ungültig für data.ndim={data.ndim}"
+            )
+
+        L = data.shape[fid_axis]
+        start_idx = int(np.floor(start_fraction * L))
+        end_idx = int(np.ceil(end_fraction * L))
+
+        mask_1d = np.zeros(L, dtype=bool)
+        mask_1d[start_idx:end_idx] = True
+
+        shape = [1] * data.ndim
+        shape[fid_axis] = L
+        mask = mask_1d.reshape(shape)
+        mask = np.broadcast_to(mask, data.shape)
+
+        masks.append(mask)
+
+    return masks
+
 def estimate_axis_correlations(
     data,
     mask_noise,
@@ -305,7 +406,9 @@ def run_noise_analysis_pipeline(
     methods,
     extra_axes=("t", "T"),
     mask_source="method",
+    mask_type="spatial",
     percentile=5,
+    fid_window=(0.3, 0.9),
     suffix="normalized",
     base_dir=None,
     compute_spatial=True,
@@ -316,6 +419,28 @@ def run_noise_analysis_pipeline(
 ):
     """
     Thin orchestration wrapper around the unified correlation functions.
+
+    Parameters
+    ----------
+    subject_ids : list of str
+    methods : dict
+    extra_axes : tuple of str
+        z. B. ("t", "T")
+    mask_source : str
+        "raw" oder "method"
+    mask_type : str
+        "spatial", "fid", oder "fid_window"
+    percentile : float
+        Wird für "spatial" und "fid" verwendet
+    fid_window : tuple of float
+        Nur für mask_type="fid_window", z. B. (0.3, 0.9)
+    suffix : str
+    base_dir : str or None
+    compute_spatial : bool
+    spatial_max_lag : int or None
+    extra_max_lag : int, dict or None
+    subtract_mean : bool
+    normalize : bool
 
     Returns
     -------
@@ -328,6 +453,10 @@ def run_noise_analysis_pipeline(
             "extra_axes": ...,
             "axis_indices": ...,
             "subject_ids": ...,
+            "mask_type": ...,
+            "mask_source": ...,
+            "percentile": ...,
+            "fid_window": ...,
         }
     """
     datasets_by_method = {}
@@ -355,15 +484,38 @@ def run_noise_analysis_pipeline(
         datasets_by_method[method_name] = data_list
 
         if mask_source == "raw":
-            mask_list = estimate_noise_masks(raw_list, percentile=percentile)
+            mask_data_list = raw_list
         elif mask_source == "method":
-            mask_list = estimate_noise_masks(data_list, percentile=percentile)
+            mask_data_list = data_list
         else:
             raise ValueError("mask_source must be 'raw' or 'method'")
 
+        if mask_type == "spatial":
+            mask_list = estimate_noise_masks(
+                mask_data_list,
+                percentile=percentile,
+            )
+
+        elif mask_type == "fid":
+            mask_list = estimate_fid_noise_masks(
+                mask_data_list,
+                percentile=percentile,
+            )
+
+        elif mask_type == "fid_window":
+            start_fraction, end_fraction = fid_window
+            mask_list = estimate_fid_window_masks(
+                mask_data_list,
+                fid_axis=3,
+                start_fraction=start_fraction,
+                end_fraction=end_fraction,
+            )
+
+        else:
+            raise ValueError("mask_type must be 'spatial', 'fid', or 'fid_window'")
+
         masks_by_method[method_name] = mask_list
 
-        # extra axes, z. B. t und T
         acfs = estimate_axis_correlations_for_dataset_list(
             dataset_list=data_list,
             mask_list=mask_list,
@@ -395,4 +547,8 @@ def run_noise_analysis_pipeline(
         "masks_by_method": masks_by_method,
         "acf_stats_by_method": acf_stats_by_method,
         "spatial_stats_by_method": spatial_stats_by_method,
+        "mask_type": mask_type,
+        "mask_source": mask_source,
+        "percentile": percentile,
+        "fid_window": fid_window,
     }
