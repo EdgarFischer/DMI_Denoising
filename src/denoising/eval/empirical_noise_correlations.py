@@ -5,20 +5,14 @@ import os
 sys.path.append(os.path.abspath("../../src"))
 from denoising.data.data_utils import *
 
-def estimate_noise_masks(dataset_list, percentile=5, axes=(3,4)):
+def estimate_noise_masks(dataset_list, percentile=5, axes=(3, 4)):
     """
     Schätzt Noise-Masken für mehrere Datensätze.
 
     Idee:
-    Es wird über FID- und Repetitions-Achsen gemittelt, sodass unkorreliertes
+    Es wird über die angegebenen Achsen gemittelt, sodass unkorreliertes
     Rauschen gegen seinen Erwartungswert (~0) konvergiert und sich weitgehend
-    auslöscht. Konsistentes Signal (z. B. metabolische Peaks) bleibt hingegen
-    erhalten. Dadurch entstehen Volumen mit stark unterdrücktem Noise, in denen
-    verbleibende Intensität primär auf echte Signalanteile zurückzuführen ist.
-
-    Anschließend wird ein Perzentil-Threshold (z. B. unterste 5%) auf diese
-    gemittelten Werte angewendet, um Voxel mit minimaler verbleibender
-    Signalenergie als Noise-Voxel zu identifizieren.
+    auslöscht. Konsistentes Signal bleibt hingegen erhalten.
 
     Parameters
     ----------
@@ -27,210 +21,104 @@ def estimate_noise_masks(dataset_list, percentile=5, axes=(3,4)):
     percentile : float
         Prozentualer Threshold für Noise-Voxel
     axes : tuple
-        Achsen über die gemittelt wird (z. B. (3,4) für t und T)
+        Achsen über die gemittelt wird, z. B. (3,4) für t und T
 
     Returns
     -------
     masks : list of np.ndarray
-        Liste von Bool-Masken (Shape: (x, y, z))
+        Liste von Bool-Masken mit derselben Shape wie die jeweiligen Datenarrays
     """
 
     masks = []
 
     for data in dataset_list:
-        averaged = np.abs(np.mean(data, axis=axes))
+        valid_axes = tuple(ax for ax in axes if ax < data.ndim)
+
+        if len(valid_axes) == 0:
+            raise ValueError(
+                f"Keine gültigen Achsen in axes={axes} für data.ndim={data.ndim}"
+            )
+
+        averaged = np.abs(np.mean(data, axis=valid_axes))
         thr = np.percentile(averaged, percentile)
-        mask_noise = averaged <= thr
+        mask_noise = averaged <= thr   # z. B. shape (x, y, z)
+
+        # auf volle Datenshape erweitern
+        n_extra_dims = data.ndim - mask_noise.ndim
+        mask_noise = mask_noise.reshape(mask_noise.shape + (1,) * n_extra_dims)
+        mask_noise = np.broadcast_to(mask_noise, data.shape)
+
         masks.append(mask_noise)
 
     return masks
 
-def estimate_1d_acf_from_masked_voxels(data, mask_noise, subtract_mean=True, normalize=True):
-    """
-    Schätzt 1D-Autokorrelationen entlang der nicht-räumlichen Achsen,
-    nachdem eine 3D-räumliche Noise-Maske angewendet wurde.
-
-    Der Erwartungswert der Autokovarianz wird empirisch über alle
-    verfügbaren Realisationen und überlappenden Samples pro Lag geschätzt.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Array mit Shape (x, y, z, ...), z.B. (x, y, z, t, T)
-    mask_noise : np.ndarray
-        Bool-Array mit Shape (x, y, z)
-    subtract_mean : bool
-        Ob Ensemble-Mittelwert pro Achse abgezogen wird
-    normalize : bool
-        Ob ACF auf Lag 0 = 1 normiert wird
-
-    Returns
-    -------
-    acfs : list of np.ndarray
-        Liste der gemittelten 1D-ACFs für jede Nicht-Raum-Achse.
-        Bei data.shape = (x,y,z,t,T):
-            acfs[0] -> ACF entlang t
-            acfs[1] -> ACF entlang T
-    """
-
-    if data.ndim < 4:
-        raise ValueError("data muss mindestens 4D sein: (x, y, z, ...)")
-    if mask_noise.shape != data.shape[:3]:
-        raise ValueError("mask_noise muss Shape data.shape[:3] haben")
-
-    noise_data = data[mask_noise]   # shape (N_voxels, ...)
-
-    if noise_data.shape[0] == 0:
-        raise ValueError("mask_noise enthält keine True-Voxel")
-
-    remaining_shape = noise_data.shape[1:]
-    n_remaining = len(remaining_shape)
-
-    acfs = []
-
-    for ax in range(n_remaining):
-        L = remaining_shape[ax]
-
-        # Zielachse ans Ende
-        arr = np.moveaxis(noise_data, ax + 1, -1)
-
-        # Ensemble-Mittelwert über alle anderen Dimensionen
-        if subtract_mean:
-            mean_axis = arr.mean(axis=tuple(range(arr.ndim - 1)), keepdims=True)
-            arr = arr - mean_axis
-
-        # viele Realisationen x Sequenzlänge
-        arr = arr.reshape(-1, L)
-        n_realizations = arr.shape[0]
-
-        acf = np.zeros(L, dtype=np.float64)
-
-        for lag in range(L):
-            seg1 = arr[:, :L - lag]
-            seg2 = arr[:, lag:]
-
-            num = np.sum(seg1 * np.conj(seg2))
-            n_pairs = n_realizations * (L - lag)
-
-            acf[lag] = np.real(num) / n_pairs
-
-        if normalize and acf[0] > 0:
-            acf = acf / acf[0]
-
-        acfs.append(acf)
-
-    return acfs
-
-def estimate_1d_acfs_for_dataset_list(
-    dataset_list,
-    mask_list,
-    subtract_mean=True,
-    normalize=True
-):
-    """
-    Wendet estimate_1d_acf_from_masked_voxels auf mehrere Datensätze an.
-
-    Parameters
-    ----------
-    dataset_list : list of np.ndarray
-        Liste von Datenarrays, jeweils Shape (x, y, z, ...)
-    mask_list : list of np.ndarray
-        Liste von Bool-Masken, jeweils Shape (x, y, z)
-    subtract_mean : bool
-        Ob Ensemble-Mittelwert pro Achse abgezogen wird
-    normalize : bool
-        Ob ACF auf Lag 0 = 1 normiert wird
-
-    Returns
-    -------
-    acfs_list : list of list of np.ndarray
-        Für jeden Datensatz eine Liste von ACFs entlang der nicht-räumlichen Achsen.
-
-        Beispiel bei data.shape = (x, y, z, t, T):
-            acfs_list[i][0] -> ACF entlang t für Datensatz i
-            acfs_list[i][1] -> ACF entlang T für Datensatz i
-    """
-
-    if len(dataset_list) != len(mask_list):
-        raise ValueError("dataset_list und mask_list müssen gleich lang sein")
-
-    acfs_list = []
-
-    for data, mask_noise in zip(dataset_list, mask_list):
-        acfs = estimate_1d_acf_from_masked_voxels(
-            data,
-            mask_noise,
-            subtract_mean=subtract_mean,
-            normalize=normalize
-        )
-        acfs_list.append(acfs)
-
-    return acfs_list
-
-def estimate_spatial_correlations(
+def estimate_axis_correlations(
     data,
     mask_noise,
+    axes=None,
     max_lag=None,
     subtract_mean=True,
-    normalize=True
+    normalize=True,
 ):
     """
-    Schätzt räumliche Autokorrelationen entlang x, y und z
-    in noise-dominierten Voxeln.
+    Schätzt Autokorrelationen entlang beliebiger Achsen unter Verwendung
+    einer voll-dimensionalen Bool-Maske.
 
-    Es werden nur Voxelpaare berücksichtigt, bei denen beide Voxel
-    in der Noise-Maske liegen. Alle nicht-räumlichen Dimensionen
-    werden als Ensemble-Dimensionen verwendet.
-
-    Die Autokovarianz für jeden Lag wird empirisch als Mittelwert
-    über alle gültigen Produkte geschätzt. Falls normalize=True,
-    wird anschließend durch den Wert bei Lag 0 dividiert, sodass
-    eine normierte Autokorrelationsfunktion mit ACF(0)=1 entsteht.
+    Für jeden Lag werden nur Paare berücksichtigt, bei denen beide Samples
+    laut Maske gültig sind.
 
     Parameters
     ----------
     data : np.ndarray
-        Array mit Shape (x, y, z, ...), z. B. (x, y, z, t, T)
+        Datenarray, z. B. Shape (x, y, z, t, T) oder (x, y, z, t)
     mask_noise : np.ndarray
-        Bool-Array mit Shape (x, y, z)
-    max_lag : int or None
-        Maximaler räumlicher Lag. Falls None, wird für jede Achse
-        die vollständige ACF bis zum maximal möglichen Lag berechnet.
+        Bool-Array mit derselben Shape wie data
+    axes : iterable of int or None
+        Achsen, entlang derer die Korrelation berechnet werden soll.
+        Falls None, werden alle Achsen verwendet.
+    max_lag : int, dict or None
+        - None: volle Länge jeder Achse
+        - int: gleicher max_lag für alle Achsen
+        - dict: eigener max_lag pro Achse, z. B. {0: 5, 3: 20}
     subtract_mean : bool
-        Ob der Ensemble-Mittelwert vor der Korrelationsschätzung
-        abgezogen werden soll.
+        Ob vor der Korrelationsschätzung der Mittelwert der gültigen Samples
+        pro Lag abgezogen werden soll.
     normalize : bool
         Ob auf Lag 0 = 1 normiert werden soll.
 
     Returns
     -------
-    spatial_corrs : dict
-        Dictionary mit Einträgen
-            {
-                "x": np.ndarray,
-                "y": np.ndarray,
-                "z": np.ndarray
-            }
-        Die Länge der Arrays hängt von der jeweiligen Achse ab.
+    corrs : dict
+        Dictionary: corrs[axis] = np.ndarray der Korrelationswerte
     """
 
-    if data.ndim < 4:
-        raise ValueError("data muss mindestens 4D sein: (x, y, z, ...)")
-    if mask_noise.shape != data.shape[:3]:
-        raise ValueError("mask_noise muss Shape data.shape[:3] haben")
-    if max_lag is not None and max_lag < 0:
-        raise ValueError("max_lag muss >= 0 sein oder None")
+    if data.shape != mask_noise.shape:
+        raise ValueError("mask_noise muss dieselbe Shape wie data haben")
 
-    spatial_corrs = {}
-    axis_map = {"x": 0, "y": 1, "z": 2}
+    if data.ndim < 1:
+        raise ValueError("data muss mindestens 1D sein")
 
-    for axis_name, ax in axis_map.items():
+    if axes is None:
+        axes = tuple(range(data.ndim))
+
+    corrs = {}
+
+    for ax in axes:
         axis_len = data.shape[ax]
 
         if max_lag is None:
             current_max_lag = axis_len - 1
-        else:
+        elif isinstance(max_lag, int):
+            if max_lag < 0:
+                raise ValueError("max_lag muss >= 0 sein")
             current_max_lag = min(max_lag, axis_len - 1)
+        elif isinstance(max_lag, dict):
+            lag_val = max_lag.get(ax, axis_len - 1)
+            if lag_val < 0:
+                raise ValueError("max_lag pro Achse muss >= 0 sein")
+            current_max_lag = min(lag_val, axis_len - 1)
+        else:
+            raise ValueError("max_lag muss None, int oder dict sein")
 
         corr_values = np.full(current_max_lag + 1, np.nan, dtype=np.float64)
 
@@ -238,18 +126,16 @@ def estimate_spatial_correlations(
             slicer1 = [slice(None)] * data.ndim
             slicer2 = [slice(None)] * data.ndim
 
-            if lag == 0:
-                slicer1[ax] = slice(None)
-                slicer2[ax] = slice(None)
-            else:
+            if lag > 0:
                 slicer1[ax] = slice(0, -lag)
                 slicer2[ax] = slice(lag, None)
 
             data1 = data[tuple(slicer1)]
             data2 = data[tuple(slicer2)]
 
-            mask1 = mask_noise[tuple(slicer1[:3])]
-            mask2 = mask_noise[tuple(slicer2[:3])]
+            mask1 = mask_noise[tuple(slicer1)]
+            mask2 = mask_noise[tuple(slicer2)]
+
             valid_pairs = mask1 & mask2
 
             if not np.any(valid_pairs):
@@ -272,106 +158,58 @@ def estimate_spatial_correlations(
         if normalize and np.isfinite(corr_values[0]) and corr_values[0] > 0:
             corr_values = corr_values / corr_values[0]
 
-        spatial_corrs[axis_name] = corr_values
+        corrs[ax] = corr_values
 
-    return spatial_corrs
+    return corrs
 
-def estimate_spatial_correlations_for_dataset_list(
+def estimate_axis_correlations_for_dataset_list(
     dataset_list,
     mask_list,
+    axes=None,
     max_lag=None,
     subtract_mean=True,
     normalize=True
 ):
     """
-    Wendet estimate_spatial_correlations auf mehrere Datensätze an.
-
-    Parameters
-    ----------
-    dataset_list : list of np.ndarray
-        Liste von Datenarrays, jeweils Shape (x, y, z, ...)
-    mask_list : list of np.ndarray
-        Liste von Bool-Masken, jeweils Shape (x, y, z)
-    max_lag : int
-        Maximaler räumlicher Lag
-    subtract_mean : bool
-        Ob der Ensemble-Mittelwert vor der Korrelationsschätzung
-        abgezogen werden soll
-    normalize : bool
-        Ob auf Lag 0 = 1 normiert werden soll
-
-    Returns
-    -------
-    spatial_corrs_list : list of dict
-        Liste von Dictionaries der Form
-            {
-                "x": np.ndarray der Länge max_lag+1,
-                "y": np.ndarray der Länge max_lag+1,
-                "z": np.ndarray der Länge max_lag+1
-            }
+    Wendet estimate_axis_correlations auf mehrere Datensätze an.
     """
 
     if len(dataset_list) != len(mask_list):
         raise ValueError("dataset_list und mask_list müssen gleich lang sein")
 
-    spatial_corrs_list = []
+    corrs_list = []
 
-    for i, (data, mask_noise) in enumerate(zip(dataset_list, mask_list)):
-        spatial_corrs = estimate_spatial_correlations(
+    for data, mask_noise in zip(dataset_list, mask_list):
+        corrs = estimate_axis_correlations(
             data=data,
             mask_noise=mask_noise,
+            axes=axes,
             max_lag=max_lag,
             subtract_mean=subtract_mean,
             normalize=normalize
         )
-        spatial_corrs_list.append(spatial_corrs)
+        corrs_list.append(corrs)
 
-    return spatial_corrs_list
+    return corrs_list
 
-def compute_acf_mean_std(acfs_list):
+def compute_correlation_mean_std(corrs_list):
     """
-    Berechnet Mittelwert und Standardabweichung der ACFs über mehrere Datensätze.
-
-    Parameters
-    ----------
-    acfs_list : list of list of np.ndarray
-        Ausgabe von estimate_1d_acfs_for_dataset_list.
-        Struktur:
-            acfs_list[i][j] = ACF für Datensatz i entlang Achse j
-
-    Returns
-    -------
-    mean_acfs : list of np.ndarray
-        Mittelwert pro Achse
-    std_acfs : list of np.ndarray
-        Standardabweichung pro Achse
-    """
-
-    n_axes = len(acfs_list[0])
-
-    mean_acfs = []
-    std_acfs = []
-
-    for ax in range(n_axes):
-        # Stacke alle Subjects für diese Achse
-        acfs_ax = np.stack([acfs[ax] for acfs in acfs_list], axis=0)
-
-        mean_acfs.append(np.mean(acfs_ax, axis=0))
-        std_acfs.append(np.std(acfs_ax, axis=0))
-
-    return mean_acfs, std_acfs
-
-def compute_spatial_acf_mean_std(spatial_corrs_list):
-    """
-    Berechnet Mittelwert und Standardabweichung der räumlichen ACFs
+    Berechnet Mittelwert und Standardabweichung der Korrelationen
     über mehrere Datensätze.
 
     Parameters
     ----------
-    spatial_corrs_list : list of dict
-        Ausgabe von estimate_spatial_correlations_for_dataset_list.
-        Struktur:
-            spatial_corrs_list[i]["x"] = Array für Datensatz i entlang x
+    corrs_list : list of dict
+        Liste von Dictionaries.
+        Beispiel:
+            corrs_list[i][ax] = Korrelationsarray für Datensatz i entlang Achse ax
+
+        z. B.
+            corrs_list[i][0]   -> x-Achse
+            corrs_list[i][3]   -> t-Achse
+        oder
+            corrs_list[i]["x"] -> x-Achse
+            corrs_list[i]["t"] -> t-Achse
 
     Returns
     -------
@@ -381,16 +219,18 @@ def compute_spatial_acf_mean_std(spatial_corrs_list):
         Standardabweichung pro Achse
     """
 
-    axes = ["x", "y", "z"]
+    if len(corrs_list) == 0:
+        raise ValueError("corrs_list darf nicht leer sein")
+
+    axes = corrs_list[0].keys()
 
     mean_corrs = {}
     std_corrs = {}
 
     for ax in axes:
-        # alle Subjects für diese Achse sammeln
-        arrs = [corrs[ax] for corrs in spatial_corrs_list]
+        arrs = [corrs[ax] for corrs in corrs_list]
 
-        # ggf. unterschiedliche Längen → auf minimale Länge kürzen
+        # falls unterschiedliche Längen vorkommen:
         min_len = min(len(a) for a in arrs)
         arrs = [a[:min_len] for a in arrs]
 
@@ -414,6 +254,7 @@ def _build_load_kwargs(suffix="normalized", base_dir=None, method=None):
         kwargs["method"] = method
 
     return kwargs
+
 
 def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", base_dir=None):
     """
@@ -451,9 +292,11 @@ def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", 
 
 
 def _axis_name_to_index(axis_name):
-    mapping = {"t": 0, "T": 1}
+    mapping = {"x": 0, "y": 1, "z": 2, "t": 3, "T": 4}
     if axis_name not in mapping:
-        raise ValueError(f"Unsupported extra axis '{axis_name}'. Supported: {list(mapping.keys())}")
+        raise ValueError(
+            f"Unsupported axis '{axis_name}'. Supported: {list(mapping.keys())}"
+        )
     return mapping[axis_name]
 
 
@@ -466,9 +309,13 @@ def run_noise_analysis_pipeline(
     suffix="normalized",
     base_dir=None,
     compute_spatial=True,
+    spatial_max_lag=None,
+    extra_max_lag=None,
+    subtract_mean=True,
+    normalize=True,
 ):
     """
-    Thin orchestration wrapper around existing functions.
+    Thin orchestration wrapper around the unified correlation functions.
 
     Returns
     -------
@@ -479,6 +326,7 @@ def run_noise_analysis_pipeline(
             "acf_stats_by_method": ...,
             "spatial_stats_by_method": ...,
             "extra_axes": ...,
+            "axis_indices": ...,
             "subject_ids": ...,
         }
     """
@@ -494,6 +342,8 @@ def run_noise_analysis_pipeline(
             base_dir=base_dir,
         )
         raw_list = load_dataset_list(subject_ids, **kwargs)
+
+    axis_indices = [_axis_name_to_index(ax) for ax in extra_axes]
 
     for method_name, method_cfg in methods.items():
         data_list = _load_or_build_method_dataset(
@@ -513,16 +363,29 @@ def run_noise_analysis_pipeline(
 
         masks_by_method[method_name] = mask_list
 
-        acfs = estimate_1d_acfs_for_dataset_list(data_list, mask_list)
-        mean_acf, std_acf = compute_acf_mean_std(acfs)
+        # extra axes, z. B. t und T
+        acfs = estimate_axis_correlations_for_dataset_list(
+            dataset_list=data_list,
+            mask_list=mask_list,
+            axes=axis_indices,
+            max_lag=extra_max_lag,
+            subtract_mean=subtract_mean,
+            normalize=normalize,
+        )
+        mean_acf, std_acf = compute_correlation_mean_std(acfs)
         acf_stats_by_method[method_name] = (mean_acf, std_acf)
 
         if compute_spatial:
-            spatial_corrs = estimate_spatial_correlations_for_dataset_list(data_list, mask_list)
-            mean_spatial, std_spatial = compute_spatial_acf_mean_std(spatial_corrs)
+            spatial_corrs = estimate_axis_correlations_for_dataset_list(
+                dataset_list=data_list,
+                mask_list=mask_list,
+                axes=(0, 1, 2),
+                max_lag=spatial_max_lag,
+                subtract_mean=subtract_mean,
+                normalize=normalize,
+            )
+            mean_spatial, std_spatial = compute_correlation_mean_std(spatial_corrs)
             spatial_stats_by_method[method_name] = (mean_spatial, std_spatial)
-
-    axis_indices = [_axis_name_to_index(ax) for ax in extra_axes]
 
     return {
         "subject_ids": subject_ids,

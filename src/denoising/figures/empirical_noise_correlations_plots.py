@@ -21,6 +21,11 @@ def plot_acf_comparison(
             "Method name": (mean_acfs, std_acfs),
             ...
         }
+
+        Erwartet pro Methode Dictionaries der Form:
+            mean_acfs[axis_index] = np.ndarray
+            std_acfs[axis_index]  = np.ndarray
+
     methods : list of str, optional
         Welche Methoden geplottet werden sollen
     axis_idx : int or list of int
@@ -28,7 +33,9 @@ def plot_acf_comparison(
     axis_names : list of str, optional
         Namen der Achsen (z. B. ["t", "T"])
     skip_lag0 : bool
+        Ob lag 0 übersprungen werden soll
     show_std : bool
+        Ob ±1 std als Band geplottet werden soll
     title : str, optional
     figsize : tuple
         Maximale Figure-Größe für zwei Plots
@@ -37,7 +44,6 @@ def plot_acf_comparison(
     if methods is None:
         methods = list(acf_stats_by_method.keys())
 
-    # int → list
     if isinstance(axis_idx, int):
         axis_indices = [axis_idx]
     else:
@@ -45,11 +51,9 @@ def plot_acf_comparison(
 
     n_plots = len(axis_indices)
 
-    # Default axis names
     if axis_names is None:
         axis_names = [f"axis {i}" for i in axis_indices]
 
-    # 👉 Dynamische Breite (1 Plot = halbe Breite)
     max_width = figsize[0]
     width_per_plot = max_width / 2
     fig_width = width_per_plot * n_plots
@@ -71,14 +75,19 @@ def plot_acf_comparison(
 
             mean_acfs, std_acfs = acf_stats_by_method[method]
 
-            if ax_i >= len(mean_acfs):
+            if ax_i not in mean_acfs:
+                continue
+            if ax_i not in std_acfs:
                 continue
 
             mean_acf = mean_acfs[ax_i]
             std_acf = std_acfs[ax_i]
 
-            start = 0 if skip_lag0 else 0
+            start = 1 if skip_lag0 else 0
             lags = np.arange(start, len(mean_acf))
+
+            if len(lags) == 0:
+                continue
 
             ax.plot(lags, mean_acf[start:], 'o-', label=method)
             any_plotted = True
@@ -222,29 +231,10 @@ def plot_averaged_signal_comparison(
     Plottet für jede Methode den Betrag des gemittelten Signals
     in all voxels vs. noise-dominated voxels, entlang der in
     results["extra_axes"] angegebenen Nicht-Raum-Achsen.
-
-    Für 5D-Daten mit extra_axes=["t", "T"]:
-        - entlang t: Mittelung über Raum + T
-        - entlang T: Mittelung über Raum + t
-
-    Für 4D-Daten mit extra_axes=["t"]:
-        - entlang t: Mittelung über Raum
-
-    Parameters
-    ----------
-    results : dict
-        Ausgabe von run_noise_analysis_pipeline(...)
-    methods : list of str, optional
-        Welche Methoden geplottet werden sollen.
-        Falls None, werden alle Methoden verwendet.
-    show_std : bool
-        Ob Standardabweichungen über Subjects als Schattierung
-        dargestellt werden sollen.
-    title : str
-        Figure-Titel.
-    figsize : tuple
-        Basisgröße der Figure.
     """
+
+    import numpy as np
+    import matplotlib.pyplot as plt
 
     datasets_by_method = results["datasets_by_method"]
     masks_by_method = results["masks_by_method"]
@@ -261,10 +251,16 @@ def plot_averaged_signal_comparison(
     if n_axes == 0:
         raise ValueError("results['extra_axes'] is empty.")
 
+    # --- FIX: fully adaptive figure size ---
+    base_w, base_h = figsize
+
+    fig_width = base_w * n_axes / 2
+    fig_height = base_h * n_methods / 2
+
     fig, axes = plt.subplots(
         n_methods,
         n_axes,
-        figsize=(figsize[0], max(figsize[1], 3 * n_methods)),
+        figsize=(fig_width, fig_height),
         squeeze=False
     )
 
@@ -287,35 +283,31 @@ def plot_averaged_signal_comparison(
             if mask_noise.shape != data.shape[:3]:
                 raise ValueError("mask_noise must have shape data.shape[:3]")
 
-            noise_data = data[mask_noise]  # shape: (N_voxels, ...)
+            noise_data = data[mask_noise]
 
             if noise_data.shape[0] == 0:
                 continue
 
-            # 4D: (x, y, z, t)
-            # noise_data -> (N_voxels, t)
             if data.ndim == 4:
                 if "t" not in extra_axes:
                     raise ValueError("For 4D data, extra_axes must contain 't'.")
 
-                mean_noise_t = np.abs(np.mean(noise_data, axis=0))       # (t,)
-                mean_all_t = np.abs(np.mean(data, axis=(0, 1, 2)))       # (t,)
+                mean_noise_t = np.abs(np.mean(noise_data, axis=0))
+                mean_all_t = np.abs(np.mean(data, axis=(0, 1, 2)))
 
                 per_axis_noise["t"].append(mean_noise_t)
                 per_axis_all["t"].append(mean_all_t)
 
-            # 5D: (x, y, z, t, T)
-            # noise_data -> (N_voxels, t, T)
             elif data.ndim == 5:
                 if "t" in extra_axes:
-                    mean_noise_t = np.abs(np.mean(noise_data, axis=(0, 2)))   # (t,)
-                    mean_all_t = np.abs(np.mean(data, axis=(0, 1, 2, 4)))     # (t,)
+                    mean_noise_t = np.abs(np.mean(noise_data, axis=(0, 2)))
+                    mean_all_t = np.abs(np.mean(data, axis=(0, 1, 2, 4)))
                     per_axis_noise["t"].append(mean_noise_t)
                     per_axis_all["t"].append(mean_all_t)
 
                 if "T" in extra_axes:
-                    mean_noise_T = np.abs(np.mean(noise_data, axis=(0, 1)))   # (T,)
-                    mean_all_T = np.abs(np.mean(data, axis=(0, 1, 2, 3)))     # (T,)
+                    mean_noise_T = np.abs(np.mean(noise_data, axis=(0, 1)))
+                    mean_all_T = np.abs(np.mean(data, axis=(0, 1, 2, 3)))
                     per_axis_noise["T"].append(mean_noise_T)
                     per_axis_all["T"].append(mean_all_T)
 
@@ -351,20 +343,10 @@ def plot_averaged_signal_comparison(
             ax.plot(x, mean_noise, 'o-', label="noise voxels")
 
             if show_std:
-                ax.fill_between(
-                    x,
-                    mean_all - std_all,
-                    mean_all + std_all,
-                    alpha=0.2
-                )
-                ax.fill_between(
-                    x,
-                    mean_noise - std_noise,
-                    mean_noise + std_noise,
-                    alpha=0.2
-                )
+                ax.fill_between(x, mean_all - std_all, mean_all + std_all, alpha=0.2)
+                ax.fill_between(x, mean_noise - std_noise, mean_noise + std_noise, alpha=0.2)
 
-            xlabel = "FID point t" if ax_name == "t" else f"{ax_name}"
+            xlabel = "FID point t" if ax_name == "t" else ax_name
             if ax_name == "T":
                 xlabel = "Repetition T"
 
