@@ -1,9 +1,6 @@
 import numpy as np
 
-from denoising.eval.empirical_noise_correlations import (
-    estimate_axis_correlations,
-    estimate_axis_correlations_for_dataset_list,
-)
+from denoising.eval.empirical_noise_correlations import *
 
 
 def _broadcast_mask(mask_3d, data_shape):
@@ -153,3 +150,64 @@ def test_estimate_axis_correlations_for_dataset_list_single_dataset_matches_dire
 
     for ax in (0, 1, 2):
         assert np.allclose(list_corrs[0][ax], direct_corrs[ax], equal_nan=True)
+
+def test_pairwise_correlations_constant_ones():
+    shape = (6, 5, 4, 7, 3)
+    data = np.ones(shape, dtype=np.float64)
+    mask = np.ones(shape, dtype=bool)
+
+    pair_corrs = estimate_axis_pair_correlations(
+        data=data,
+        mask_noise=mask,
+        axis_pairs=None,
+        max_lag=4,
+        subtract_mean=False,
+        normalize=True,
+        return_counts=False,
+    )
+
+    for pair, corr in pair_corrs.items():
+        if not np.allclose(corr, 1.0, atol=1e-12):
+            raise AssertionError(
+                f"Constant ones test failed for pair {pair}.\n"
+                f"Got:\n{corr}"
+            )
+
+    print("test_pairwise_correlations_constant_ones: PASSED")
+
+def test_pairwise_correlations_white_noise(seed=0):
+    rng = np.random.default_rng(seed)
+
+    shape = (20, 20, 12, 30, 8)
+    data = rng.standard_normal(shape)
+    mask = np.ones(shape, dtype=bool)
+
+    pair_corrs = estimate_axis_pair_correlations(
+        data=data,
+        mask_noise=mask,
+        axis_pairs=None,
+        max_lag=3,
+        subtract_mean=True,
+        normalize=True,
+        return_counts=False,
+    )
+
+    for pair, corr in pair_corrs.items():
+        # lag (0,0) should be 1 after normalization
+        if not np.isclose(corr[0, 0], 1.0, atol=1e-10):
+            raise AssertionError(
+                f"White noise test failed at lag (0,0) for pair {pair}: got {corr[0,0]}"
+            )
+
+        # off-zero lags should be small
+        off_zero = corr.copy()
+        off_zero[0, 0] = 0.0
+
+        max_abs_off_zero = np.nanmax(np.abs(off_zero))
+        if max_abs_off_zero > 0.1:
+            raise AssertionError(
+                f"White noise test failed for pair {pair}: "
+                f"max |off-zero correlation| = {max_abs_off_zero:.4f}"
+            )
+
+    print("test_pairwise_correlations_white_noise: PASSED")

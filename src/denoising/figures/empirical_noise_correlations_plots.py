@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 def plot_acf_comparison(
     acf_stats_by_method,
     methods=None,
-    axis_idx=0,
+    axis_indices=None,
     axis_names=None,
     skip_lag0=True,
     show_std=True,
@@ -12,7 +12,7 @@ def plot_acf_comparison(
     figsize=(12, 4)
 ):
     """
-    Vergleicht ACFs mehrerer Methoden in einem oder mehreren gemeinsamen Plots.
+    Compare ACFs across methods for all or selected axes.
 
     Parameters
     ----------
@@ -22,38 +22,42 @@ def plot_acf_comparison(
             ...
         }
 
-        Erwartet pro Methode Dictionaries der Form:
-            mean_acfs[axis_index] = np.ndarray
-            std_acfs[axis_index]  = np.ndarray
-
     methods : list of str, optional
-        Welche Methoden geplottet werden sollen
-    axis_idx : int or list of int
-        Welche Achse(n) geplottet werden sollen
+        Methods to plot
+    axis_indices : list of int, optional
+        Which axes to plot (default: all available)
     axis_names : list of str, optional
-        Namen der Achsen (z. B. ["t", "T"])
+        Names of axes (e.g. ["x","y","z","t","T"])
     skip_lag0 : bool
-        Ob lag 0 übersprungen werden soll
     show_std : bool
-        Ob ±1 std als Band geplottet werden soll
     title : str, optional
     figsize : tuple
-        Maximale Figure-Größe für zwei Plots
     """
+
+    import numpy as np
+    import matplotlib.pyplot as plt
 
     if methods is None:
         methods = list(acf_stats_by_method.keys())
 
-    if isinstance(axis_idx, int):
-        axis_indices = [axis_idx]
+    # 👉 infer available axes from first method
+    first_method = methods[0]
+    mean_acfs_first, _ = acf_stats_by_method[first_method]
+    available_axes = sorted(mean_acfs_first.keys())
+
+    # 👉 default: plot ALL axes
+    if axis_indices is None:
+        axis_indices = available_axes
+
+    # 👉 axis names handling
+    if axis_names is None:
+        axis_names = [f"axis {i}" for i in axis_indices]
     else:
-        axis_indices = list(axis_idx)
+        axis_names = [axis_names[i] for i in axis_indices]
 
     n_plots = len(axis_indices)
 
-    if axis_names is None:
-        axis_names = [f"axis {i}" for i in axis_indices]
-
+    # 👉 dynamic figure width
     max_width = figsize[0]
     width_per_plot = max_width / 2
     fig_width = width_per_plot * n_plots
@@ -63,9 +67,10 @@ def plot_acf_comparison(
     if n_plots == 1:
         axes = [axes]
 
+    # 🔁 plotting
     for plot_idx, ax_i in enumerate(axis_indices):
         ax = axes[plot_idx]
-        axis_name = axis_names[plot_idx] if plot_idx < len(axis_names) else f"axis {ax_i}"
+        axis_name = axis_names[plot_idx]
 
         any_plotted = False
 
@@ -76,8 +81,6 @@ def plot_acf_comparison(
             mean_acfs, std_acfs = acf_stats_by_method[method]
 
             if ax_i not in mean_acfs:
-                continue
-            if ax_i not in std_acfs:
                 continue
 
             mean_acf = mean_acfs[ax_i]
@@ -525,3 +528,105 @@ def _find_true_segments(mask_1d):
         segments.append((start, len(mask_1d)))
 
     return segments
+
+def plot_pairwise_correlations(results, method=None, panel_size=3.0):
+    """
+    Plot mean 2D pairwise autocorrelation maps for all computed axis pairs.
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import math
+
+    available_methods = list(results["pair_corr_stats_by_method"].keys())
+
+    if len(available_methods) == 0:
+        raise ValueError("No pairwise correlation results found.")
+
+    if method is None:
+        method = available_methods[0]
+        print(f"Using method: {method}")
+
+    if method not in available_methods:
+        raise ValueError(
+            f"Method '{method}' not found. Available: {available_methods}"
+        )
+
+    mean_pair, _ = results["pair_corr_stats_by_method"][method]
+
+    if len(mean_pair) == 0:
+        raise ValueError(f"No pairwise correlations stored for method '{method}'.")
+
+    axis_names_list = results.get("axis_names", None)
+    if axis_names_list is None:
+        raise ValueError("results does not contain 'axis_names'.")
+
+    axis_names = {i: name for i, name in enumerate(axis_names_list)}
+
+    pairs = sorted(mean_pair.keys())
+
+    titles = [f"({axis_names[a1]}, {axis_names[a2]})" for a1, a2 in pairs]
+
+    axis_labels = {
+        (a1, a2): (rf"$\Delta {axis_names[a2]}$", rf"$\Delta {axis_names[a1]}$")
+        for a1, a2 in pairs
+    }
+
+    vmin = min(np.nanmin(mean_pair[p]) for p in pairs)
+    vmax = max(np.nanmax(mean_pair[p]) for p in pairs)
+
+    n_plots = len(pairs)
+
+    if n_plots <= 3:
+        ncols = n_plots
+    elif n_plots <= 6:
+        ncols = 3
+    else:
+        ncols = 4
+
+    nrows = math.ceil(n_plots / ncols)
+
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(panel_size * ncols, panel_size * nrows * 0.9),
+    )
+
+    if nrows == 1 and ncols == 1:
+        axes = np.array([[axes]])
+    elif nrows == 1:
+        axes = np.array([axes])
+    elif ncols == 1:
+        axes = axes.reshape(-1, 1)
+
+    axes_flat = axes.ravel()
+    ims = []
+
+    for ax, pair, title in zip(axes_flat, pairs, titles):
+        corr = mean_pair[pair]
+        xlabel, ylabel = axis_labels[pair]
+
+        im = ax.imshow(
+            corr,
+            origin="lower",
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        ims.append(im)
+
+        ax.set_title(title, fontsize=12, pad=2)
+        ax.set_xlabel(xlabel, fontsize=11, labelpad=2)
+        ax.set_ylabel(ylabel, fontsize=11, labelpad=2)
+        ax.tick_params(axis="both", pad=1)
+
+    for ax in axes_flat[n_plots:]:
+        ax.axis("off")
+
+    fig.suptitle(method, fontsize=14, y=0.98)
+    fig.subplots_adjust(right=0.88, top=0.90, wspace=0.35, hspace=0.75)
+
+    cbar_ax = fig.add_axes([0.90, 0.15, 0.02, 0.70])
+    cbar = fig.colorbar(ims[0], cax=cbar_ax)
+    cbar.set_label("Correlation", fontsize=11)
+
+    plt.show()

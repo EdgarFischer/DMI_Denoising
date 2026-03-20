@@ -357,6 +357,22 @@ def _build_load_kwargs(suffix="normalized", base_dir=None, method=None):
     return kwargs
 
 
+def squeeze_trailing_singleton_dims(dataset_list, min_ndim=4):
+    """
+    Remove trailing singleton dimensions from each dataset, but keep at least
+    `min_ndim` dimensions.
+    """
+    squeezed = []
+
+    for data in dataset_list:
+        arr = data
+        while arr.ndim > min_ndim and arr.shape[-1] == 1:
+            arr = np.squeeze(arr, axis=-1)
+        squeezed.append(arr)
+
+    return squeezed
+
+
 def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", base_dir=None):
     """
     Returns a dataset list for one method.
@@ -368,7 +384,8 @@ def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", 
             suffix=suffix,
             base_dir=base_dir,
         )
-        return load_dataset_list(subject_ids, **kwargs)
+        data_list = load_dataset_list(subject_ids, **kwargs)
+        return squeeze_trailing_singleton_dims(data_list, min_ndim=4)
 
     if mtype == "precomputed":
         kwargs = _build_load_kwargs(
@@ -376,7 +393,8 @@ def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", 
             base_dir=base_dir,
             method=method_cfg["method"],
         )
-        return load_dataset_list(subject_ids, **kwargs)
+        data_list = load_dataset_list(subject_ids, **kwargs)
+        return squeeze_trailing_singleton_dims(data_list, min_ndim=4)
 
     if mtype == "callable":
         kwargs = _build_load_kwargs(
@@ -384,85 +402,343 @@ def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", 
             base_dir=base_dir,
         )
         raw_list = load_dataset_list(subject_ids, **kwargs)
+        raw_list = squeeze_trailing_singleton_dims(raw_list, min_ndim=4)
 
         fn = method_cfg["fn"]
         fn_kwargs = method_cfg.get("kwargs", {})
-        return fn(raw_list, **fn_kwargs)
+        data_list = fn(raw_list, **fn_kwargs)
+        return squeeze_trailing_singleton_dims(data_list, min_ndim=4)
 
     raise ValueError(f"Unknown method type: {mtype}")
 
 
-def _axis_name_to_index(axis_name):
-    mapping = {"x": 0, "y": 1, "z": 2, "t": 3, "T": 4}
-    if axis_name not in mapping:
-        raise ValueError(
-            f"Unsupported axis '{axis_name}'. Supported: {list(mapping.keys())}"
+def _infer_axis_names(ndim):
+    """
+    Infer axis names from dimensionality.
+
+    4D -> x, y, z, t
+    5D -> x, y, z, t, T
+    """
+    if ndim == 4:
+        return ["x", "y", "z", "t"]
+    if ndim == 5:
+        return ["x", "y", "z", "t", "T"]
+
+    raise ValueError(
+        f"Unsupported ndim={ndim}. Currently only 4D and 5D are supported."
+    )
+
+def _resolve_max_lag(axis_len, axis, max_lag):
+    """
+    Resolve max_lag for one axis.
+
+    Parameters
+    ----------
+    axis_len : int
+        Length of the current axis
+    axis : int
+        Axis index
+    max_lag : None, int, or dict
+
+    Returns
+    -------
+    resolved_max_lag : int
+    """
+    if max_lag is None:
+        return axis_len - 1
+
+    if isinstance(max_lag, int):
+        if max_lag < 0:
+            raise ValueError("max_lag must be >= 0")
+        return min(max_lag, axis_len - 1)
+
+    if isinstance(max_lag, dict):
+        lag_val = max_lag.get(axis, axis_len - 1)
+        if lag_val < 0:
+            raise ValueError("max_lag per axis must be >= 0")
+        return min(lag_val, axis_len - 1)
+
+    raise ValueError("max_lag must be None, int, or dict")
+
+
+def estimate_axis_pair_correlations(
+    data,
+    mask_noise,
+    axis_pairs=None,
+    max_lag=None,
+    subtract_mean=True,
+    normalize=True,
+    return_counts=False,
+):
+    """
+    Estimate 2D (pairwise) autocorrelations for selected axis pairs.
+
+    For each axis pair (ax1, ax2), estimates a 2D correlation map over
+    lag pairs (lag1, lag2), using only pairs for which both samples are
+    valid according to mask_noise.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Data array, e.g. shape (x, y, z, t, T)
+    mask_noise : np.ndarray
+        Bool array with same shape as data
+    axis_pairs : iterable of tuple(int, int) or None
+        Axis pairs to evaluate, e.g. ((0,1), (0,3), (3,4)).
+        If None, all unique pairs (ax1 < ax2) are used.
+    max_lag : None, int, or dict
+        - None: full lag range for each axis
+        - int: same max lag for all axes
+        - dict: per-axis max lag, e.g. {0: 5, 3: 20}
+    subtract_mean : bool
+        Whether to subtract the mean of valid samples per lag pair
+    normalize : bool
+        Whether to normalize such that corr[0,0] = 1
+    return_counts : bool
+        Whether to also return the number of valid pairs per lag pair
+
+    Returns
+    -------
+    pair_corrs : dict
+        pair_corrs[(ax1, ax2)] = 2D np.ndarray of shape
+        (max_lag_ax1 + 1, max_lag_ax2 + 1)
+    pair_counts : dict, optional
+        pair_counts[(ax1, ax2)] = 2D np.ndarray with valid pair counts
+        Returned only if return_counts=True.
+    """
+    if data.shape != mask_noise.shape:
+        raise ValueError("mask_noise must have the same shape as data")
+
+    if data.ndim < 2:
+        raise ValueError("data must be at least 2D for pair correlations")
+
+    if axis_pairs is None:
+        axis_pairs = []
+        for ax1 in range(data.ndim):
+            for ax2 in range(ax1 + 1, data.ndim):
+                axis_pairs.append((ax1, ax2))
+
+    pair_corrs = {}
+    pair_counts = {}
+
+    for ax1, ax2 in axis_pairs:
+        if ax1 == ax2:
+            raise ValueError(f"Axis pair ({ax1}, {ax2}) is invalid: axes must differ")
+
+        if not (0 <= ax1 < data.ndim and 0 <= ax2 < data.ndim):
+            raise ValueError(f"Invalid axis pair ({ax1}, {ax2}) for data.ndim={data.ndim}")
+
+        max_lag1 = _resolve_max_lag(data.shape[ax1], ax1, max_lag)
+        max_lag2 = _resolve_max_lag(data.shape[ax2], ax2, max_lag)
+
+        corr_map = np.full((max_lag1 + 1, max_lag2 + 1), np.nan, dtype=np.float64)
+        count_map = np.zeros((max_lag1 + 1, max_lag2 + 1), dtype=np.int64)
+
+        for lag1 in range(max_lag1 + 1):
+            for lag2 in range(max_lag2 + 1):
+                slicer1 = [slice(None)] * data.ndim
+                slicer2 = [slice(None)] * data.ndim
+
+                if lag1 > 0:
+                    slicer1[ax1] = slice(0, -lag1)
+                    slicer2[ax1] = slice(lag1, None)
+
+                if lag2 > 0:
+                    slicer1[ax2] = slice(0, -lag2)
+                    slicer2[ax2] = slice(lag2, None)
+
+                data1 = data[tuple(slicer1)]
+                data2 = data[tuple(slicer2)]
+
+                mask1 = mask_noise[tuple(slicer1)]
+                mask2 = mask_noise[tuple(slicer2)]
+
+                valid_pairs = mask1 & mask2
+                n_pairs = int(np.count_nonzero(valid_pairs))
+                count_map[lag1, lag2] = n_pairs
+
+                if n_pairs == 0:
+                    continue
+
+                arr1 = data1[valid_pairs].reshape(-1)
+                arr2 = data2[valid_pairs].reshape(-1)
+
+                if subtract_mean:
+                    arr1 = arr1 - np.mean(arr1)
+                    arr2 = arr2 - np.mean(arr2)
+
+                cov = np.sum(arr1 * np.conj(arr2)) / n_pairs
+                corr_map[lag1, lag2] = np.real(cov)
+
+        if normalize and np.isfinite(corr_map[0, 0]) and corr_map[0, 0] > 0:
+            corr_map = corr_map / corr_map[0, 0]
+
+        pair_corrs[(ax1, ax2)] = corr_map
+        pair_counts[(ax1, ax2)] = count_map
+
+    if return_counts:
+        return pair_corrs, pair_counts
+
+    return pair_corrs
+
+
+def estimate_axis_pair_correlations_for_dataset_list(
+    dataset_list,
+    mask_list,
+    axis_pairs=None,
+    max_lag=None,
+    subtract_mean=True,
+    normalize=True,
+    return_counts=False,
+):
+    """
+    Apply estimate_axis_pair_correlations to multiple datasets.
+    """
+    if len(dataset_list) != len(mask_list):
+        raise ValueError("dataset_list and mask_list must have the same length")
+
+    corrs_list = []
+    counts_list = []
+
+    for data, mask_noise in zip(dataset_list, mask_list):
+        result = estimate_axis_pair_correlations(
+            data=data,
+            mask_noise=mask_noise,
+            axis_pairs=axis_pairs,
+            max_lag=max_lag,
+            subtract_mean=subtract_mean,
+            normalize=normalize,
+            return_counts=return_counts,
         )
-    return mapping[axis_name]
+
+        if return_counts:
+            pair_corrs, pair_counts = result
+            corrs_list.append(pair_corrs)
+            counts_list.append(pair_counts)
+        else:
+            corrs_list.append(result)
+
+    if return_counts:
+        return corrs_list, counts_list
+
+    return corrs_list
+
+
+def compute_pair_correlation_mean_std(corrs_list):
+    """
+    Compute mean and std of 2D pairwise correlations across datasets.
+
+    Parameters
+    ----------
+    corrs_list : list of dict
+        corrs_list[i][(ax1, ax2)] = 2D correlation map for dataset i
+
+    Returns
+    -------
+    mean_corrs : dict
+        mean_corrs[(ax1, ax2)] = mean 2D correlation map
+    std_corrs : dict
+        std_corrs[(ax1, ax2)] = std 2D correlation map
+    """
+    if len(corrs_list) == 0:
+        raise ValueError("corrs_list must not be empty")
+
+    axis_pairs = corrs_list[0].keys()
+
+    mean_corrs = {}
+    std_corrs = {}
+
+    for pair in axis_pairs:
+        arrs = [corrs[pair] for corrs in corrs_list]
+
+        min_shape0 = min(a.shape[0] for a in arrs)
+        min_shape1 = min(a.shape[1] for a in arrs)
+        arrs = [a[:min_shape0, :min_shape1] for a in arrs]
+
+        stacked = np.stack(arrs, axis=0)
+
+        mean_corrs[pair] = np.mean(stacked, axis=0)
+        std_corrs[pair] = np.std(stacked, axis=0)
+
+    return mean_corrs, std_corrs
+
+
+def _axis_pair_names_to_indices(pair_axes):
+    """
+    Convert axis-name pairs to index pairs.
+
+    Example
+    -------
+    [("x", "t"), ("t", "T")] -> [(0, 3), (3, 4)]
+    """
+    return [(_axis_name_to_index(ax1), _axis_name_to_index(ax2)) for ax1, ax2 in pair_axes]
+
+
 
 
 def run_noise_analysis_pipeline(
     subject_ids,
     methods,
-    extra_axes=("t", "T"),
     mask_source="method",
     mask_type="spatial",
     percentile=5,
     fid_window=(0.3, 0.9),
     suffix="normalized",
     base_dir=None,
+    max_lag=None,
     compute_spatial=True,
-    spatial_max_lag=None,
-    extra_max_lag=None,
+    compute_pairwise=False,
+    return_pair_counts=False,
     subtract_mean=True,
     normalize=True,
 ):
     """
-    Thin orchestration wrapper around the unified correlation functions.
+    Orchestration wrapper around the correlation functions.
+
+    Behavior
+    --------
+    - 1D correlations are always computed along all available axes.
+    - 2D pairwise correlations are computed for all unique axis pairs if requested.
+    - Dimensionality is inferred automatically from the data:
+        4D -> (x, y, z, t)
+        5D -> (x, y, z, t, T)
 
     Parameters
     ----------
     subject_ids : list of str
     methods : dict
-    extra_axes : tuple of str
-        z. B. ("t", "T")
     mask_source : str
-        "raw" oder "method"
+        "raw" or "method"
     mask_type : str
-        "spatial", "fid", oder "fid_window"
+        "spatial", "fid", or "fid_window"
     percentile : float
-        Wird für "spatial" und "fid" verwendet
+        Used for "spatial" and "fid"
     fid_window : tuple of float
-        Nur für mask_type="fid_window", z. B. (0.3, 0.9)
+        Only for mask_type="fid_window"
     suffix : str
     base_dir : str or None
+    max_lag : None, int, or dict
+        Used only for pairwise 2D autocorrelations.
+        1D correlations are always computed over the full available range.
     compute_spatial : bool
-    spatial_max_lag : int or None
-    extra_max_lag : int, dict or None
+        Whether to separately store the 1D correlations of spatial axes x, y, z.
+    compute_pairwise : bool
+        Whether to compute all pairwise 2D autocorrelations automatically.
+    return_pair_counts : bool
+        Whether to also keep valid-pair count maps for pairwise correlations.
     subtract_mean : bool
     normalize : bool
 
     Returns
     -------
     results : dict
-        {
-            "datasets_by_method": ...,
-            "masks_by_method": ...,
-            "acf_stats_by_method": ...,
-            "spatial_stats_by_method": ...,
-            "extra_axes": ...,
-            "axis_indices": ...,
-            "subject_ids": ...,
-            "mask_type": ...,
-            "mask_source": ...,
-            "percentile": ...,
-            "fid_window": ...,
-        }
     """
     datasets_by_method = {}
     masks_by_method = {}
     acf_stats_by_method = {}
     spatial_stats_by_method = {}
+    pair_corr_stats_by_method = {}
+    pair_count_stats_by_method = {}
 
     raw_list = None
     if mask_source == "raw":
@@ -471,8 +747,11 @@ def run_noise_analysis_pipeline(
             base_dir=base_dir,
         )
         raw_list = load_dataset_list(subject_ids, **kwargs)
+        raw_list = squeeze_trailing_singleton_dims(raw_list, min_ndim=4)
 
-    axis_indices = [_axis_name_to_index(ax) for ax in extra_axes]
+    inferred_axis_names = None
+    inferred_axis_indices = None
+    inferred_spatial_axes = None
 
     for method_name, method_cfg in methods.items():
         data_list = _load_or_build_method_dataset(
@@ -482,6 +761,26 @@ def run_noise_analysis_pipeline(
             base_dir=base_dir,
         )
         datasets_by_method[method_name] = data_list
+
+        if len(data_list) == 0:
+            raise ValueError(f"No datasets loaded for method '{method_name}'")
+
+        ndim = data_list[0].ndim
+        axis_names = _infer_axis_names(ndim)
+        axis_indices = list(range(ndim))
+        spatial_axes = tuple(ax for ax in (0, 1, 2) if ax < ndim)
+
+        # store once globally, but check consistency across methods
+        if inferred_axis_names is None:
+            inferred_axis_names = axis_names
+            inferred_axis_indices = axis_indices
+            inferred_spatial_axes = spatial_axes
+        else:
+            if axis_names != inferred_axis_names:
+                raise ValueError(
+                    f"Inconsistent dimensionality across methods. "
+                    f"Previous axis names: {inferred_axis_names}, current: {axis_names}"
+                )
 
         if mask_source == "raw":
             mask_data_list = raw_list
@@ -516,39 +815,81 @@ def run_noise_analysis_pipeline(
 
         masks_by_method[method_name] = mask_list
 
+        # 1D correlations along all available axes
         acfs = estimate_axis_correlations_for_dataset_list(
             dataset_list=data_list,
             mask_list=mask_list,
             axes=axis_indices,
-            max_lag=extra_max_lag,
+            max_lag=None,
             subtract_mean=subtract_mean,
             normalize=normalize,
         )
         mean_acf, std_acf = compute_correlation_mean_std(acfs)
         acf_stats_by_method[method_name] = (mean_acf, std_acf)
 
+        # separate 1D spatial correlations
         if compute_spatial:
             spatial_corrs = estimate_axis_correlations_for_dataset_list(
                 dataset_list=data_list,
                 mask_list=mask_list,
-                axes=(0, 1, 2),
-                max_lag=spatial_max_lag,
+                axes=spatial_axes,
+                max_lag=None,
                 subtract_mean=subtract_mean,
                 normalize=normalize,
             )
             mean_spatial, std_spatial = compute_correlation_mean_std(spatial_corrs)
             spatial_stats_by_method[method_name] = (mean_spatial, std_spatial)
 
+        # 2D pairwise correlations: all unique pairs automatically
+        if compute_pairwise:
+            if return_pair_counts:
+                pair_corrs_list, pair_counts_list = estimate_axis_pair_correlations_for_dataset_list(
+                    dataset_list=data_list,
+                    mask_list=mask_list,
+                    axis_pairs=None,
+                    max_lag=max_lag,
+                    subtract_mean=subtract_mean,
+                    normalize=normalize,
+                    return_counts=True,
+                )
+
+                mean_pair_corrs, std_pair_corrs = compute_pair_correlation_mean_std(pair_corrs_list)
+                mean_pair_counts, std_pair_counts = compute_pair_correlation_mean_std(pair_counts_list)
+
+                pair_corr_stats_by_method[method_name] = (mean_pair_corrs, std_pair_corrs)
+                pair_count_stats_by_method[method_name] = (mean_pair_counts, std_pair_counts)
+
+            else:
+                pair_corrs_list = estimate_axis_pair_correlations_for_dataset_list(
+                    dataset_list=data_list,
+                    mask_list=mask_list,
+                    axis_pairs=None,
+                    max_lag=max_lag,
+                    subtract_mean=subtract_mean,
+                    normalize=normalize,
+                    return_counts=False,
+                )
+
+                mean_pair_corrs, std_pair_corrs = compute_pair_correlation_mean_std(pair_corrs_list)
+                pair_corr_stats_by_method[method_name] = (mean_pair_corrs, std_pair_corrs)
+
     return {
         "subject_ids": subject_ids,
-        "extra_axes": list(extra_axes),
-        "axis_indices": axis_indices,
+        "axis_names": inferred_axis_names,
+        "axis_indices": inferred_axis_indices,
+        "spatial_axes": inferred_spatial_axes,
         "datasets_by_method": datasets_by_method,
         "masks_by_method": masks_by_method,
         "acf_stats_by_method": acf_stats_by_method,
         "spatial_stats_by_method": spatial_stats_by_method,
+        "pair_corr_stats_by_method": pair_corr_stats_by_method,
+        "pair_count_stats_by_method": pair_count_stats_by_method,
         "mask_type": mask_type,
         "mask_source": mask_source,
         "percentile": percentile,
         "fid_window": fid_window,
+        "max_lag": max_lag,
+        "compute_pairwise": compute_pairwise,
+        "return_pair_counts": return_pair_counts,
     }
+
