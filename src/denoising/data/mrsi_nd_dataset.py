@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from typing import Tuple, Optional, Dict
+from denoising.data.patching import get_random_patch_slices, extract_patch
 
 class MRSiNDataset(Dataset):
     """
@@ -34,6 +35,8 @@ class MRSiNDataset(Dataset):
         transform=None,
         num_samples: int = 10000,
         phase_prob: float = 1.0,
+        patching_enabled: bool = False,
+        patch_sizes: Optional[Tuple[Optional[int], ...]] = None,
     ):
         self.data = data
         self.image_axes = tuple(image_axes)
@@ -43,6 +46,8 @@ class MRSiNDataset(Dataset):
         self.transform = transform
         self.num_samples = int(num_samples)
         self.phase_prob = float(phase_prob)
+        self.patching_enabled = bool(patching_enabled)
+        self.patch_sizes = tuple(patch_sizes) if patch_sizes is not None else tuple()
 
         if len(self.image_axes) not in (2, 3):
             raise ValueError("Only 2D and 3D image_axes are supported.")
@@ -67,6 +72,15 @@ class MRSiNDataset(Dataset):
                 f"masked_axes {invalid_mask_axes} are not part of visible network axes "
                 f"{self.network_axes}."
             )
+
+        if self.patching_enabled:
+            expected_num_patch_axes = len(self.image_axes) + (1 if self.channel_axis is not None else 0)
+
+            if len(self.patch_sizes) != expected_num_patch_axes:
+                raise ValueError(
+                    f"patch_sizes must have length {expected_num_patch_axes}, "
+                    f"but got {len(self.patch_sizes)}."
+                )
 
     def __len__(self):
         return self.num_samples
@@ -122,6 +136,10 @@ class MRSiNDataset(Dataset):
             # axes 2.. = image_axes
             local_axis_map = {self.channel_axis: 1}
             local_axis_map.update({ax: i + 2 for i, ax in enumerate(self.image_axes)})
+
+        if self.patching_enabled:
+            patch_slices = get_random_patch_slices(img.shape, self.patch_sizes)
+            img = extract_patch(img, patch_slices)
 
         masked_axes_local = tuple(local_axis_map[ax] for ax in self.masked_axes)
 

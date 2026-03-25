@@ -51,6 +51,8 @@ def prepare_dataset(
     fixed_indices,
     phase_prob: float,
     normalization: bool,
+    patching_enabled: bool,
+    patch_sizes,
 ):
     data = load_and_preprocess_data(
         folder_names=folders,
@@ -68,6 +70,8 @@ def prepare_dataset(
         transform=transform,
         num_samples=num_samples,
         phase_prob=phase_prob,
+        patching_enabled=patching_enabled,
+        patch_sizes=tuple(patch_sizes),
     )
 
 
@@ -118,6 +122,8 @@ def train(
     fixed_indices = getattr(cfg.data, "fixed_indices", None)
     phase_prob = getattr(cfg.data, "phase_prob", 1.0)
     do_norm = getattr(cfg.data, "normalization", True)
+    patching_enabled = cfg.patching.enabled
+    patch_sizes = cfg.patching.patch_sizes
 
     # ----- Build datasets -----
     train_ds = prepare_dataset(
@@ -132,6 +138,8 @@ def train(
         fixed_indices=fixed_indices,
         phase_prob=phase_prob,
         normalization=do_norm,
+        patching_enabled=patching_enabled,
+        patch_sizes=patch_sizes,
     )
 
     val_ds = prepare_dataset(
@@ -146,6 +154,8 @@ def train(
         fixed_indices=fixed_indices,
         phase_prob=phase_prob,
         normalization=do_norm,
+        patching_enabled=patching_enabled,
+        patch_sizes=patch_sizes,
     )
 
     # ----- Device & dataloaders -----

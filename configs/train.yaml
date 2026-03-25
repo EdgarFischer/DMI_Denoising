@@ -1,24 +1,24 @@
 run:
-  name: "Sim_Lesion_double_xy-f" # give your model a name
+  name: "Sim_Lesion_double_xyz-f" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model
-  gpu: "3" # check GPU availabiliy with nvidia-smi
+  gpu: "2" # check GPU availabiliy with nvidia-smi
   seed: 42
 
 data:
   train: ["Simulated_Lesion_double_2_normalized_tMPPCA_5D", "Simulated_Lesion_double_3_normalized_tMPPCA_5D", "Simulated_Lesion_double_4_normalized_tMPPCA_5D", "Simulated_Lesion_double_5_normalized_tMPPCA_5D", "Simulated_Lesion_double_6_normalized_tMPPCA_5D"]
   val:   ["Simulated_Lesion_double_1_normalized_tMPPCA_5D"]
 
-  image_axes: [0, 1]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
+  image_axes: [0, 1, 2]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
   channel_axis: 3     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
-  num_samples: 10000 #10000  # how many voxels are chosen per epoch
-  val_samples: 2000 #2000
+  num_samples: 1000 #10000  # how many voxels are chosen per epoch
+  val_samples: 200 #2000
 
   normalization: True   # data is automatically normalized
 
-patching: # Patching along network input axes (image_axes + optional channel_axis), null = full axis
+patching: # Patching along network input axes, null = full axis, number = patch size along that axis
   enabled: true
-  patch_sizes: [5, 5, null]
+  patch_sizes: [null, 8, 8, 8] # with channel_axis C: [C, image_axes], else: [image_axes]
 
 masking:
   masked_axes: [3]    # global data axes to be masked; can contain one axis (1D mask) or two axes (2D mask). The mask is then replicated along the remaining dimensions.
@@ -35,5 +35,5 @@ optim:
   min_lr: 0.00002     # once this learning rate is reached, it is not further reduced
   epochs: 500
 
-  batch_size: 600
+  batch_size: 160 #600 typically for 2D
   num_workers: 0
