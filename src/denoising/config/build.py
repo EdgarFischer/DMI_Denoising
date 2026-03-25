@@ -1,6 +1,20 @@
 # src/denoising/config/build.py
 from .schema import Config, RunCfg, DataCfg, PatchingCfg, MaskCfg, ModelCfg, OptimCfg
 
+def validate_config(cfg: Config) -> None:
+    # --- patching ---
+    if cfg.patching.enabled:
+        num_axes = len(cfg.data.image_axes) + (
+            1 if cfg.data.channel_axis is not None else 0
+        )
+
+        if len(cfg.patching.patch_sizes) != num_axes:
+            raise ValueError(
+                f"patch_sizes must have length {num_axes} "
+                f"(image_axes + optional channel_axis), "
+                f"but got {len(cfg.patching.patch_sizes)}."
+            )
+
 def build_config(raw: dict) -> Config:
     # --- run ---
     run = RunCfg(**raw["run"])
@@ -22,12 +36,12 @@ def build_config(raw: dict) -> Config:
     )
 
     # --- patching ---
-    patch_raw = raw["patching"]
+    patch_raw = raw.get("patching", {})
     patching = PatchingCfg(
         enabled=bool(patch_raw.get("enabled", False)),
         patch_sizes=tuple(
             None if p is None else int(p)
-            for p in patch_raw["patch_sizes"]
+            for p in patch_raw.get("patch_sizes", [])
         ),
     )
 
@@ -57,7 +71,7 @@ def build_config(raw: dict) -> Config:
         num_workers=int(optim_raw["num_workers"]),
     )
 
-    return Config(
+    cfg = Config(
         run=run,
         data=data,
         patching=patching,
@@ -65,3 +79,6 @@ def build_config(raw: dict) -> Config:
         model=model,
         optim=optim,
     )
+
+    validate_config(cfg)
+    return cfg
