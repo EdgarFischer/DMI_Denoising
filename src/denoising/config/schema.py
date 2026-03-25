@@ -50,6 +50,11 @@ class OptimCfg:
 
 
 @dataclass(frozen=True)
+class InferenceCfg:
+    patch_strides: Tuple[Optional[int], ...]
+    weight_mode: str = "hann"
+
+@dataclass(frozen=True)
 class Config:
     run: RunCfg
     data: DataCfg
@@ -57,3 +62,4 @@ class Config:
     mask: MaskCfg
     model: ModelCfg
     optim: OptimCfg
+    inference: Optional[InferenceCfg] = None

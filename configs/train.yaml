@@ -37,3 +37,7 @@ optim:
 
   batch_size: 160 #600 typically for 2D
   num_workers: 0
+
+inference:
+  patch_strides: [null, 4, 4, 4]
+  weight_mode: "hann"   # hann window

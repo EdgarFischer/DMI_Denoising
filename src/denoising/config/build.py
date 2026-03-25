@@ -1,5 +1,5 @@
 # src/denoising/config/build.py
-from .schema import Config, RunCfg, DataCfg, PatchingCfg, MaskCfg, ModelCfg, OptimCfg
+from .schema import Config, RunCfg, DataCfg, PatchingCfg, MaskCfg, ModelCfg, OptimCfg, InferenceCfg
 
 def validate_config(cfg: Config) -> None:
     # --- patching ---
@@ -13,6 +13,18 @@ def validate_config(cfg: Config) -> None:
                 f"patch_sizes must have length {num_axes} "
                 f"(image_axes + optional channel_axis), "
                 f"but got {len(cfg.patching.patch_sizes)}."
+            )
+    # --- inference ---
+    if cfg.inference is not None:
+        num_axes = len(cfg.data.image_axes) + (
+            1 if cfg.data.channel_axis is not None else 0
+        )
+
+        if len(cfg.inference.patch_strides) != num_axes:
+            raise ValueError(
+                f"patch_strides must have length {num_axes} "
+                f"(image_axes + optional channel_axis), "
+                f"but got {len(cfg.inference.patch_strides)}."
             )
 
 def build_config(raw: dict) -> Config:
@@ -71,6 +83,18 @@ def build_config(raw: dict) -> Config:
         num_workers=int(optim_raw["num_workers"]),
     )
 
+    # --- inference ---
+    inf_raw = raw.get("inference", None)
+    inference = None
+    if inf_raw is not None:
+        inference = InferenceCfg(
+            patch_strides=tuple(
+                None if p is None else int(p)
+                for p in inf_raw.get("patch_strides", [])
+            ),
+            weight_mode=str(inf_raw.get("weight_mode", "hann")),
+        )
+
     cfg = Config(
         run=run,
         data=data,
@@ -78,6 +102,7 @@ def build_config(raw: dict) -> Config:
         mask=mask,
         model=model,
         optim=optim,
+        inference=inference,
     )
 
     validate_config(cfg)
