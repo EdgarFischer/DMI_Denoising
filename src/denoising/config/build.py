@@ -1,5 +1,5 @@
 # src/denoising/config/build.py
-from .schema import Config, RunCfg, DataCfg, MaskCfg, ModelCfg, OptimCfg
+from .schema import Config, RunCfg, DataCfg, PatchingCfg, MaskCfg, ModelCfg, OptimCfg
 
 def build_config(raw: dict) -> Config:
     # --- run ---
@@ -19,6 +19,16 @@ def build_config(raw: dict) -> Config:
         num_samples=int(data_raw["num_samples"]),
         val_samples=int(data_raw["val_samples"]),
         normalization=bool(data_raw.get("normalization", True)),
+    )
+
+    # --- patching ---
+    patch_raw = raw["patching"]
+    patching = PatchingCfg(
+        enabled=bool(patch_raw.get("enabled", False)),
+        patch_sizes=tuple(
+            None if p is None else int(p)
+            for p in patch_raw["patch_sizes"]
+        ),
     )
 
     # --- masking ---
@@ -50,6 +60,7 @@ def build_config(raw: dict) -> Config:
     return Config(
         run=run,
         data=data,
+        patching=patching,
         mask=mask,
         model=model,
         optim=optim,

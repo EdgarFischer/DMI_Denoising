@@ -21,6 +21,10 @@ class DataCfg:
     val_samples: int
     normalization: bool
 
+@dataclass(frozen=True)
+class PatchingCfg:
+    enabled: bool
+    patch_sizes: Tuple[Optional[int], ...]
 
 @dataclass(frozen=True)
 class MaskCfg:
@@ -49,6 +53,7 @@ class OptimCfg:
 class Config:
     run: RunCfg
     data: DataCfg
+    patching: PatchingCfg
     mask: MaskCfg
     model: ModelCfg
     optim: OptimCfg
