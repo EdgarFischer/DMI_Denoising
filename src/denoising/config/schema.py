@@ -100,3 +100,5 @@ class Config:
     model: ModelCfg
     optim: OptimCfg
     inference: Optional[InferenceCfg] = None
+    resume_training: bool = False
+    resume_ckpt: str = ""

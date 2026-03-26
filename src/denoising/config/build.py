@@ -170,6 +170,8 @@ def build_config(raw: dict) -> Config:
         model=model,
         optim=optim,
         inference=inference,
+        resume_training=bool(raw.get("resume_training", False)),
+        resume_ckpt=str(raw.get("resume_ckpt", "")),
     )
 
     validate_config(cfg)

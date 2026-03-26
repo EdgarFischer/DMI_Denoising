@@ -80,6 +80,33 @@ def sample_n2s_mask(shape, p=0.03, device=None):
         device = "cuda" if torch.cuda.is_available() else "cpu"
     return (torch.rand(shape, device=device) < p).float()
 
+def get_rng_state():
+    state = {
+        "python_random_state": random.getstate(),
+        "numpy_random_state": np.random.get_state(),
+        "torch_random_state": torch.get_rng_state(),
+    }
+    if torch.cuda.is_available():
+        state["torch_cuda_random_state_all"] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def set_rng_state(state_dict):
+    if not state_dict:
+        return
+
+    if "python_random_state" in state_dict:
+        random.setstate(state_dict["python_random_state"])
+
+    if "numpy_random_state" in state_dict:
+        np.random.set_state(state_dict["numpy_random_state"])
+
+    if "torch_random_state" in state_dict:
+        torch.set_rng_state(state_dict["torch_random_state"])
+
+    if torch.cuda.is_available() and "torch_cuda_random_state_all" in state_dict:
+        torch.cuda.set_rng_state_all(state_dict["torch_cuda_random_state_all"])
+
 
 # ---------------------------
 # Main entry
@@ -230,35 +257,87 @@ def train(
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda)
 
-    # ----- Optional pretrained -----
-    ckpt_path = getattr(cfg, "pretrained_ckpt", "")
+    # ----- Resume / pretrained -----
+    # Two modes:
+    #   1) resume_training=True  -> restore epoch, best_val, optimizer, scheduler, RNG
+    #   2) pretrained_ckpt only  -> load weights, optionally optimizer
+    resume_training = bool(getattr(cfg, "resume_training", False))
+    ckpt_path = getattr(cfg, "resume_ckpt", "" if not resume_training else "")
+
+    if ckpt_path == "":
+        ckpt_path = getattr(cfg, "pretrained_ckpt", "")
     if ckpt_path == "":
         ckpt_path = getattr(cfg.optim, "pretrained_ckpt", "") if hasattr(cfg, "optim") else ""
+
+    start_epoch = 0
+    best_val = float("inf")
 
     if ckpt_path and os.path.isfile(ckpt_path):
         ckpt = torch.load(ckpt_path, map_location=device)
         state_dict = ckpt.get("model_state", ckpt)
         strict_flag = getattr(cfg, "pretrained_strict", True)
+
         model.load_state_dict(state_dict, strict=strict_flag)
         logger.info(f"Gewichte geladen aus {ckpt_path}")
 
-        if getattr(cfg, "load_optimizer_from_pretrained", False) and "optimizer_state" in ckpt:
-            try:
-                optim.load_state_dict(ckpt["optimizer_state"])
-                logger.info("Optimizer-State mitgeladen.")
-            except Exception as e:
-                logger.warning(f"Optimizer-State konnte nicht geladen werden: {e}")
+        if resume_training:
+            # Resume full training state as exactly as possible
+            if "optimizer_state" in ckpt:
+                try:
+                    optim.load_state_dict(ckpt["optimizer_state"])
+                    logger.info("Optimizer-State mitgeladen.")
+                except Exception as e:
+                    logger.warning(f"Optimizer-State konnte nicht geladen werden: {e}")
+
+            if "scheduler_state" in ckpt:
+                try:
+                    scheduler.load_state_dict(ckpt["scheduler_state"])
+                    logger.info("Scheduler-State mitgeladen.")
+                except Exception as e:
+                    logger.warning(f"Scheduler-State konnte nicht geladen werden: {e}")
+
+            start_epoch = int(ckpt.get("epoch", 0))
+            best_val = float(ckpt.get("best_val", ckpt.get("val_loss", float("inf"))))
+
+            if "rng_state" in ckpt:
+                try:
+                    set_rng_state(ckpt["rng_state"])
+                    logger.info("RNG-State mitgeladen.")
+                except Exception as e:
+                    logger.warning(f"RNG-State konnte nicht geladen werden: {e}")
+
+            logger.info(
+                f"Resume training from epoch {start_epoch} "
+                f"(next epoch will be {start_epoch + 1}), best_val={best_val:.4e}"
+            )
+        else:
+            if getattr(cfg, "load_optimizer_from_pretrained", False) and "optimizer_state" in ckpt:
+                try:
+                    optim.load_state_dict(ckpt["optimizer_state"])
+                    logger.info("Optimizer-State mitgeladen.")
+                except Exception as e:
+                    logger.warning(f"Optimizer-State konnte nicht geladen werden: {e}")
 
     # ----- Checkpoints -----
     os.makedirs(checkpoint_dir, exist_ok=True)
     best_ckpt = os.path.join(checkpoint_dir, "best.pt")
     last_ckpt = os.path.join(checkpoint_dir, "last.pt")
-    best_val = float("inf")
 
     epochs = cfg.optim.epochs
 
+    if resume_training and start_epoch >= epochs:
+        logger.info(
+            f"Checkpoint epoch {start_epoch} is already >= configured epochs {epochs}. "
+            f"Nothing to do."
+        )
+        print(
+            f"Checkpoint epoch {start_epoch} is already >= configured epochs {epochs}. "
+            f"Nothing to do."
+        )
+        return
+
     # ----- Training loop -----
-    for epoch in range(1, epochs + 1):
+    for epoch in range(start_epoch + 1, epochs + 1):
         # ---- TRAIN ----
         model.train()
         running = 0.0
@@ -311,6 +390,7 @@ def train(
             f"Epoch {epoch:03d} · train={avg_train:.4e} · val={avg_val:.4e} · lr={current_lr:.2e}"
         )
         print(f"[Ep {epoch:03d}] train={avg_train:.4e} val={avg_val:.4e}")
+        rng_state = get_rng_state()
 
         # ---- Checkpoints ----
         if avg_val < best_val:
@@ -320,7 +400,11 @@ def train(
                     "epoch": epoch,
                     "model_state": model.state_dict(),
                     "optimizer_state": optim.state_dict(),
-                    "val_loss": best_val,
+                    "scheduler_state": scheduler.state_dict(),
+                    "val_loss": avg_val,
+                    "best_val": best_val,
+                    "rng_state": rng_state,
+                    "self_supervised_mode": self_mode,
                 },
                 best_ckpt,
             )
@@ -331,7 +415,11 @@ def train(
                 "epoch": epoch,
                 "model_state": model.state_dict(),
                 "optimizer_state": optim.state_dict(),
+                "scheduler_state": scheduler.state_dict(),
                 "val_loss": avg_val,
+                "best_val": best_val,
+                "rng_state": rng_state,
+                "self_supervised_mode": self_mode,
             },
             last_ckpt,
         )

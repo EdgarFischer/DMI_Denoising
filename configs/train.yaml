@@ -1,8 +1,11 @@
 run:
-  name: "TEST" # give your model a name
+  name: Sim_Lesion_double_xyf-z #"Sim_Lesion_double_xyf-z_continued" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model
   gpu: "3" # check GPU availabiliy with nvidia-smi
   seed: 42
+
+resume_training: True # load pretrained model exactly with optimizer state etc etc 
+resume_ckpt: #"trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
 
 data:
   train: ["Simulated_Lesion_double_2_normalized_tMPPCA_5D", "Simulated_Lesion_double_3_normalized_tMPPCA_5D", "Simulated_Lesion_double_4_normalized_tMPPCA_5D", "Simulated_Lesion_double_5_normalized_tMPPCA_5D", "Simulated_Lesion_double_6_normalized_tMPPCA_5D"]
@@ -25,13 +28,13 @@ augmentation:
     
   permutation:  # randomly permute these global axes (if present in sample)
     enabled: true
-    p: 1
-    axes: [0, 1]
+    p: 0.5
+    axes: [0, 1, 2]
    
   inversion: # random flips along these global axes
     enabled: true
-    p: 1
-    axes: [0, 1]
+    p: 0.5
+    axes: [0, 1, 2]
     
   global_scale:  # multiply full sample by scalar ~ U(min, max)
     enabled: true
@@ -59,7 +62,7 @@ optim:
   min_lr: 0.00002     # once this learning rate is reached, it is not further reduced
   epochs: 500
 
-  batch_size: 160 #600 typically for 2D
+  batch_size: 140 # 160 600 typically for 2D
   num_workers: 0
 
 inference:
