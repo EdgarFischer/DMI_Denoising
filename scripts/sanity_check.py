@@ -42,6 +42,13 @@ def build_sanity_config(original_cfg: dict, train_dir: Path, val_dir: Path, run_
     # small model for speed
     cfg["model"]["features"] = [4, 8]
 
+    # disable patching for tiny synthetic data
+    cfg["patching"]["enabled"] = False
+
+    # disable augmentation for sanity check
+    if "augmentation" in cfg:
+        cfg["augmentation"]["enabled"] = False
+
     return cfg
 
 
