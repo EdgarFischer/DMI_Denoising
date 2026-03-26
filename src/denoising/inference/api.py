@@ -282,25 +282,8 @@ def infer(
     else:
         x_work = x_fid
 
-    # ---- to model input ----
-    x_np, shape_info = _to_model_input(cfg, x_work)
-
-    # ---- infer model dimensions ----
-    in_channels = int(x_np.shape[1])
-    spatial_dim = x_np.ndim - 2
-    out_channels = in_channels
-
-    if spatial_dim == 2:
-        model = UNet2D(in_channels, out_channels, cfg.model.features).to(device).eval()
-    elif spatial_dim == 3:
-        model = UNet3D(in_channels, out_channels, cfg.model.features).to(device).eval()
-    else:
-        raise ValueError(f"Unsupported spatial_dim={spatial_dim}. Expected 2 or 3.")
-
-    # ---- load checkpoint ----
-    state = torch.load(ckpt_path, map_location=device)
-    state_dict = state.get("model_state", state)
-    model.load_state_dict(state_dict, strict=True)
+    # ---- to STRUCTURED model input ----
+    x_np, shape_info = _to_structured_model_input(cfg, x_work)
 
     # ---- resolve patch-wise inference settings from cfg if not explicitly passed ----
     inference_cfg = getattr(cfg, "inference", None)
@@ -319,8 +302,40 @@ def infer(
     if inference_cfg is not None and weight_mode == "average":
         weight_mode = inference_cfg.weight_mode
 
-    
-        # ---- run inference ----
+    # ---- infer model dimensions ----
+    has_channel_axis = cfg.data.channel_axis is not None
+
+    if has_channel_axis:
+        if inference_patch_sizes is not None:
+            channel_patch_size = inference_patch_sizes[0]
+            if channel_patch_size is None:
+                channel_size_for_model = int(x_np.shape[2])
+            else:
+                channel_size_for_model = int(channel_patch_size)
+        else:
+            channel_size_for_model = int(x_np.shape[2])
+
+        in_channels = 2 * channel_size_for_model
+        spatial_dim = x_np.ndim - 3
+    else:
+        in_channels = 2
+        spatial_dim = x_np.ndim - 2
+
+    out_channels = in_channels
+
+    if spatial_dim == 2:
+        model = UNet2D(in_channels, out_channels, cfg.model.features).to(device).eval()
+    elif spatial_dim == 3:
+        model = UNet3D(in_channels, out_channels, cfg.model.features).to(device).eval()
+    else:
+        raise ValueError(f"Unsupported spatial_dim={spatial_dim}. Expected 2 or 3.")
+
+    # ---- load checkpoint ----
+    state = torch.load(ckpt_path, map_location=device)
+    state_dict = state.get("model_state", state)
+    model.load_state_dict(state_dict, strict=True)
+
+    # ---- run inference ----
     t0 = time.time()
 
     if inference_patch_sizes is None:
@@ -330,8 +345,29 @@ def infer(
         with torch.no_grad():
             for i0 in range(0, x_np.shape[0], batch_size):
                 i1 = min(i0 + batch_size, x_np.shape[0])
-                xb = torch.from_numpy(x_np[i0:i1]).to(device, non_blocking=True)
+
+                xb_struct = x_np[i0:i1]
+
+                if has_channel_axis:
+                    xb = xb_struct.reshape(
+                        xb_struct.shape[0],
+                        xb_struct.shape[1] * xb_struct.shape[2],
+                        *xb_struct.shape[3:]
+                    )
+                else:
+                    xb = xb_struct
+
+                xb = torch.from_numpy(xb).to(device, non_blocking=True)
                 yb = model(xb).detach().cpu().numpy()
+
+                if has_channel_axis:
+                    yb = yb.reshape(
+                        yb.shape[0],
+                        2,
+                        xb_struct.shape[2],
+                        *yb.shape[2:]
+                    )
+
                 y_np[i0:i1] = yb
     else:
         if inference_strides is None:
@@ -343,7 +379,8 @@ def infer(
             f"strides={inference_strides}, weight_mode={weight_mode}"
         )
 
-        expected_len = x_np.ndim - 1  # sample shape = x_np.shape[1:]
+        expected_len = len(cfg.data.image_axes) + (1 if has_channel_axis else 0)
+
         if len(inference_patch_sizes) != expected_len:
             raise ValueError(
                 f"inference_patch_sizes must have length {expected_len}, "
@@ -355,7 +392,7 @@ def infer(
                 f"got {len(inference_strides)}"
             )
 
-        y_np = _run_model_on_patches(
+        y_np = _run_model_on_patches_structured(
             x_np=x_np,
             model=model,
             device=device,
@@ -363,12 +400,13 @@ def infer(
             inference_patch_sizes=inference_patch_sizes,
             inference_strides=inference_strides,
             weight_mode=weight_mode,
+            has_channel_axis=has_channel_axis,
         )
 
     dt = time.time() - t0
 
     # ---- reconstruct working-domain volume ----
-    y_work = _from_model_output(y_np, shape_info)
+    y_work = _from_structured_model_output(y_np, shape_info)
 
     # ---- invert FFT if needed ----
     if len(fourier_axes) > 0:
@@ -475,6 +513,271 @@ def _run_model_on_patches(
                     sample.shape[i] if p is None else int(p)
                     for i, p in enumerate(inference_patch_sizes)
                 ),
+                weight_mode=weight_mode,
+            )
+
+            y_np[n] = recon
+
+    return y_np
+
+def _from_structured_model_output(
+    y_np: np.ndarray,
+    shape_info: Dict[str, Any]
+) -> np.ndarray:
+    """
+    Inverse of _to_structured_model_input.
+
+    Input:
+      y_np:
+        - without channel_axis: (N, 2, *spatial)
+        - with channel_axis   : (N, 2, C, *spatial)
+
+    Output:
+      complex array with original standardized shape (X,Y,Z,F,T)
+    """
+    orig_shape = tuple(shape_info["orig_shape"])
+    image_axes = tuple(shape_info["image_axes"])
+    channel_axis = shape_info["channel_axis"]
+    leading_axes = tuple(shape_info["leading_axes"])
+    leading_shape = tuple(shape_info["leading_shape"])
+    spatial_shape = tuple(shape_info["spatial_shape"])
+
+    if channel_axis is None:
+        expected_ndim = 2 + len(spatial_shape)
+        if y_np.ndim != expected_ndim or y_np.shape[1] != 2:
+            raise ValueError(
+                f"Expected y_np shape (N,2,*spatial), got {y_np.shape}"
+            )
+
+        # (N, 2, *spatial) -> (N, *spatial) complex
+        y_complex = y_np[:, 0] + 1j * y_np[:, 1]
+
+        # (N, *spatial) -> (*leading, *spatial)
+        y_complex = y_complex.reshape(*leading_shape, *spatial_shape)
+
+        # inverse of perm = leading_axes + image_axes
+        perm = list(leading_axes) + list(image_axes)
+        inv_perm = np.argsort(perm)
+        y_complex = np.transpose(y_complex, axes=inv_perm)
+
+    else:
+        C = int(shape_info["channel_size"])
+        expected_ndim = 3 + len(spatial_shape)
+
+        if y_np.ndim != expected_ndim:
+            raise ValueError(
+                f"Expected y_np shape (N,2,C,*spatial), got {y_np.shape}"
+            )
+        if y_np.shape[1] != 2:
+            raise ValueError(
+                f"Expected second axis to have size 2 (real/imag), got {y_np.shape}"
+            )
+        if y_np.shape[2] != C:
+            raise ValueError(
+                f"Expected channel axis size {C}, got {y_np.shape[2]}"
+            )
+
+        # (N, 2, C, *spatial) -> (N, C, *spatial) complex
+        y_complex = y_np[:, 0] + 1j * y_np[:, 1]
+
+        # (N, C, *spatial) -> (*leading, C, *spatial)
+        y_complex = y_complex.reshape(*leading_shape, C, *spatial_shape)
+
+        # inverse of perm = leading_axes + [channel_axis] + image_axes
+        perm = list(leading_axes) + [channel_axis] + list(image_axes)
+        inv_perm = np.argsort(perm)
+        y_complex = np.transpose(y_complex, axes=inv_perm)
+
+    if y_complex.shape != orig_shape:
+        raise RuntimeError(
+            f"Shape mismatch after reconstruction: got {y_complex.shape}, expected {orig_shape}"
+        )
+
+    return y_complex.astype(np.complex64, copy=False)
+
+def _to_structured_model_input(
+    cfg,
+    arr: np.ndarray
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """
+    Convert standardized complex array with shape (X,Y,Z,F,T)
+    to STRUCTURED model input.
+
+    Global axes are interpreted exactly as in training.
+
+    Output:
+      x_np:
+        - without channel_axis: (N, 2, *spatial)
+        - with channel_axis   : (N, 2, C, *spatial)
+
+    where:
+      spatial = axes selected by image_axes
+      C       = size of channel_axis
+      N       = product of all remaining leading axes
+    """
+    arr = np.asarray(arr)
+    if arr.ndim != 5:
+        raise ValueError(f"Expected standardized 5D array, got {arr.shape}")
+
+    image_axes = tuple(cfg.data.image_axes)
+    channel_axis = cfg.data.channel_axis
+
+    if len(image_axes) not in (2, 3):
+        raise ValueError(f"image_axes must have length 2 or 3, got {image_axes}")
+
+    if channel_axis is not None and channel_axis in image_axes:
+        raise ValueError("channel_axis must not be part of image_axes")
+
+    network_axes = list(image_axes)
+    if channel_axis is not None:
+        network_axes.append(channel_axis)
+
+    leading_axes = [ax for ax in range(arr.ndim) if ax not in network_axes]
+
+    if channel_axis is None:
+        # (leading..., *image_axes)
+        perm = leading_axes + list(image_axes)
+        arr_p = np.transpose(arr, axes=perm)
+
+        leading_shape = arr_p.shape[:len(leading_axes)]
+        spatial_shape = arr_p.shape[len(leading_axes):]
+        N = int(np.prod(leading_shape)) if len(leading_shape) > 0 else 1
+
+        arr_p = arr_p.reshape(N, *spatial_shape)  # (N, *spatial)
+
+        real = arr_p.real.astype(np.float32, copy=False)
+        imag = arr_p.imag.astype(np.float32, copy=False)
+        x_np = np.stack([real, imag], axis=1)     # (N, 2, *spatial)
+
+    else:
+        # (leading..., channel, *image_axes)
+        perm = leading_axes + [channel_axis] + list(image_axes)
+        arr_p = np.transpose(arr, axes=perm)
+
+        n_lead = len(leading_axes)
+        leading_shape = arr_p.shape[:n_lead]
+        C = arr_p.shape[n_lead]
+        spatial_shape = arr_p.shape[n_lead + 1:]
+        N = int(np.prod(leading_shape)) if len(leading_shape) > 0 else 1
+
+        arr_p = arr_p.reshape(N, C, *spatial_shape)   # (N, C, *spatial)
+
+        real = arr_p.real.astype(np.float32, copy=False)
+        imag = arr_p.imag.astype(np.float32, copy=False)
+        x_np = np.stack([real, imag], axis=1)         # (N, 2, C, *spatial)
+
+    shape_info = {
+        "orig_shape": tuple(arr.shape),
+        "image_axes": image_axes,
+        "channel_axis": channel_axis,
+        "leading_axes": tuple(leading_axes),
+        "leading_shape": tuple(leading_shape),
+        "spatial_shape": tuple(spatial_shape),
+    }
+    if channel_axis is not None:
+        shape_info["channel_size"] = int(C)
+
+    return x_np.astype(np.float32, copy=False), shape_info
+
+def _run_model_on_patches_structured(
+    x_np: np.ndarray,
+    model,
+    device,
+    batch_size: int,
+    inference_patch_sizes,
+    inference_strides,
+    weight_mode: str = "average",
+    has_channel_axis: bool = False,
+) -> np.ndarray:
+    """
+    Patch-wise inference on STRUCTURED representation.
+
+    Input:
+      x_np:
+        - without channel_axis: (N, 2, *spatial)
+        - with channel_axis   : (N, 2, C, *spatial)
+
+    The configured patch_sizes / strides refer to the structured axes
+    EXCLUDING the leading real/imag axis. Therefore we expand them here
+    to full sample.ndim by prepending the real/imag axis.
+    """
+    y_np = np.empty_like(x_np)
+
+    with torch.no_grad():
+        for n in range(x_np.shape[0]):
+            sample = x_np[n]
+
+            # sample is either:
+            #   (2, *spatial)
+            # or
+            #   (2, C, *spatial)
+            #
+            # Config patch semantics:
+            #   without channel_axis: [image_axes]
+            #   with channel_axis   : [channel_axis, image_axes]
+            #
+            # But generate_inference_patches expects one entry per actual axis
+            # of `sample`, so we must prepend the real/imag axis here.
+            expanded_patch_sizes = (sample.shape[0],) + tuple(
+                sample.shape[i + 1] if p is None else int(p)
+                for i, p in enumerate(inference_patch_sizes)
+            )
+            expanded_strides = (sample.shape[0],) + tuple(
+                sample.shape[i + 1] if s is None else int(s)
+                for i, s in enumerate(inference_strides)
+            )
+
+            slices_list, patches = generate_inference_patches(
+                arr=sample,
+                patch_sizes=expanded_patch_sizes,
+                strides=expanded_strides,
+                return_patches=True,
+            )
+
+            pred_patches = []
+
+            for i0 in range(0, len(patches), batch_size):
+                i1 = min(i0 + batch_size, len(patches))
+                batch_struct = patches[i0:i1]
+
+                batch_model_in = []
+                patch_struct_shapes = []
+
+                for patch in batch_struct:
+                    patch_struct_shapes.append(patch.shape)
+
+                    if has_channel_axis:
+                        # (2, C, *spatial) -> (2*C, *spatial)
+                        patch_model_in = patch.reshape(
+                            patch.shape[0] * patch.shape[1],
+                            *patch.shape[2:]
+                        )
+                    else:
+                        # (2, *spatial) -> unchanged
+                        patch_model_in = patch
+
+                    batch_model_in.append(patch_model_in)
+
+                xb = np.stack(batch_model_in, axis=0)
+                xb = torch.from_numpy(xb).to(device, non_blocking=True)
+                yb = model(xb).detach().cpu().numpy()
+
+                for k in range(yb.shape[0]):
+                    patch_shape = patch_struct_shapes[k]
+
+                    if has_channel_axis:
+                        # (2*C, *spatial) -> (2, C, *spatial)
+                        pred_patch = yb[k].reshape(patch_shape)
+                    else:
+                        pred_patch = yb[k]
+
+                    pred_patches.append(pred_patch)
+
+            recon = reconstruct_from_patches(
+                patches=pred_patches,
+                slices_list=slices_list,
+                output_shape=sample.shape,
+                patch_sizes=expanded_patch_sizes,
                 weight_mode=weight_mode,
             )
 

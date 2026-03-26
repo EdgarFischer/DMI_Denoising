@@ -1,15 +1,15 @@
 run:
-  name: "Sim_Lesion_double_xyz-f" # give your model a name
+  name: "Sim_Lesion_double_xyf-z" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model
-  gpu: "2" # check GPU availabiliy with nvidia-smi
+  gpu: "3" # check GPU availabiliy with nvidia-smi
   seed: 42
 
 data:
   train: ["Simulated_Lesion_double_2_normalized_tMPPCA_5D", "Simulated_Lesion_double_3_normalized_tMPPCA_5D", "Simulated_Lesion_double_4_normalized_tMPPCA_5D", "Simulated_Lesion_double_5_normalized_tMPPCA_5D", "Simulated_Lesion_double_6_normalized_tMPPCA_5D"]
   val:   ["Simulated_Lesion_double_1_normalized_tMPPCA_5D"]
 
-  image_axes: [0, 1, 2]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
-  channel_axis: 3     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
+  image_axes: [0, 1, 3]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
+  channel_axis: 2     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
   num_samples: 1000   #10000  # how many voxels are chosen per epoch
   val_samples: 200    #2000
@@ -18,7 +18,7 @@ data:
 
 patching: # Patching along network input axes, null = full axis, number = patch size along that axis
   enabled: true
-  patch_sizes: [null, 8, 8, 8] # with channel_axis C: [C, image_axes], else: [image_axes]
+  patch_sizes: [8, 8, 8, null] # with channel_axis C: [C, image_axes], else: [image_axes]
 
 masking:
   masked_axes: [3]    # global data axes to be masked; can contain one axis (1D mask) or two axes (2D mask). The mask is then replicated along the remaining dimensions.
@@ -39,5 +39,5 @@ optim:
   num_workers: 0
 
 inference:
-  patch_strides: [null, 4, 4, 4]
+  patch_strides: [2, 2, 2, null]
   weight_mode: "hann"   # hann or average possible
