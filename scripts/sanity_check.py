@@ -49,6 +49,9 @@ def build_sanity_config(original_cfg: dict, train_dir: Path, val_dir: Path, run_
     if "augmentation" in cfg:
         cfg["augmentation"]["enabled"] = False
 
+    cfg["resume_training"] = False
+    cfg["resume_ckpt"] = ""
+
     return cfg
 
 
