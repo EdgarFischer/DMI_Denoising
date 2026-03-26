@@ -11,8 +11,8 @@ data:
   image_axes: [0, 1, 2]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
   channel_axis: 3     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
-  num_samples: 1000 #10000  # how many voxels are chosen per epoch
-  val_samples: 200 #2000
+  num_samples: 1000   #10000  # how many voxels are chosen per epoch
+  val_samples: 200    #2000
 
   normalization: True   # data is automatically normalized
 
@@ -40,4 +40,4 @@ optim:
 
 inference:
   patch_strides: [null, 4, 4, 4]
-  weight_mode: "hann"   # hann window
+  weight_mode: "hann"   # hann or average possible

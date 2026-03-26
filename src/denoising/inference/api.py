@@ -10,6 +10,7 @@ import torch
 
 from denoising.models.unet2d import UNet2D
 from denoising.models.unet3d import UNet3D
+from denoising.data.patching import *
 
 
 def _resolve_ckpt_path(ckpt: Union[str, Path]) -> Path:
@@ -233,6 +234,9 @@ def infer(
     batch_size: int = 64,
     device: Optional[Union[str, torch.device]] = None,
     save_input: bool = False,
+    inference_patch_sizes=None,
+    inference_strides=None,
+    weight_mode="average",
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
     Single-file inference.
@@ -298,16 +302,68 @@ def infer(
     state_dict = state.get("model_state", state)
     model.load_state_dict(state_dict, strict=True)
 
-    # ---- run inference ----
-    y_np = np.empty_like(x_np)
+    # ---- resolve patch-wise inference settings from cfg if not explicitly passed ----
+    inference_cfg = getattr(cfg, "inference", None)
+    patching_cfg = getattr(cfg, "patching", None)
+
+    if (
+        inference_patch_sizes is None
+        and patching_cfg is not None
+        and getattr(patching_cfg, "enabled", False)
+    ):
+        inference_patch_sizes = patching_cfg.patch_sizes
+
+    if inference_strides is None and inference_cfg is not None:
+        inference_strides = inference_cfg.patch_strides
+
+    if inference_cfg is not None and weight_mode == "average":
+        weight_mode = inference_cfg.weight_mode
+
+    
+        # ---- run inference ----
     t0 = time.time()
 
-    with torch.no_grad():
-        for i0 in range(0, x_np.shape[0], batch_size):
-            i1 = min(i0 + batch_size, x_np.shape[0])
-            xb = torch.from_numpy(x_np[i0:i1]).to(device, non_blocking=True)
-            yb = model(xb).detach().cpu().numpy()
-            y_np[i0:i1] = yb
+    if inference_patch_sizes is None:
+        print("[infer] Using full-volume inference")
+        y_np = np.empty_like(x_np)
+
+        with torch.no_grad():
+            for i0 in range(0, x_np.shape[0], batch_size):
+                i1 = min(i0 + batch_size, x_np.shape[0])
+                xb = torch.from_numpy(x_np[i0:i1]).to(device, non_blocking=True)
+                yb = model(xb).detach().cpu().numpy()
+                y_np[i0:i1] = yb
+    else:
+        if inference_strides is None:
+            inference_strides = inference_patch_sizes
+
+        print(
+            f"[infer] Using patch-wise inference "
+            f"with patch_sizes={inference_patch_sizes}, "
+            f"strides={inference_strides}, weight_mode={weight_mode}"
+        )
+
+        expected_len = x_np.ndim - 1  # sample shape = x_np.shape[1:]
+        if len(inference_patch_sizes) != expected_len:
+            raise ValueError(
+                f"inference_patch_sizes must have length {expected_len}, "
+                f"got {len(inference_patch_sizes)}"
+            )
+        if len(inference_strides) != expected_len:
+            raise ValueError(
+                f"inference_strides must have length {expected_len}, "
+                f"got {len(inference_strides)}"
+            )
+
+        y_np = _run_model_on_patches(
+            x_np=x_np,
+            model=model,
+            device=device,
+            batch_size=batch_size,
+            inference_patch_sizes=inference_patch_sizes,
+            inference_strides=inference_strides,
+            weight_mode=weight_mode,
+        )
 
     dt = time.time() - t0
 
@@ -378,3 +434,50 @@ def infer(
             np.save(output_path.with_name(output_path.stem + "_input.npy"), x_fid)
 
     return y_out, meta
+
+def _run_model_on_patches(
+    x_np: np.ndarray,
+    model,
+    device,
+    batch_size: int,
+    inference_patch_sizes,
+    inference_strides,
+    weight_mode: str = "average",
+) -> np.ndarray:
+    y_np = np.empty_like(x_np)
+
+    with torch.no_grad():
+        for n in range(x_np.shape[0]):
+            sample = x_np[n]  # (C, X, Y, Z) or (C, X, Y)
+
+            slices_list, patches = generate_inference_patches(
+                arr=sample,
+                patch_sizes=inference_patch_sizes,
+                strides=inference_strides,
+                return_patches=True,
+            )
+
+            pred_patches = []
+
+            for i0 in range(0, len(patches), batch_size):
+                i1 = min(i0 + batch_size, len(patches))
+                xb = np.stack(patches[i0:i1], axis=0)  # (B, C, ...)
+                xb = torch.from_numpy(xb).to(device, non_blocking=True)
+                yb = model(xb).detach().cpu().numpy()
+
+                pred_patches.extend([yb[k] for k in range(yb.shape[0])])
+
+            recon = reconstruct_from_patches(
+                patches=pred_patches,
+                slices_list=slices_list,
+                output_shape=sample.shape,
+                patch_sizes=tuple(
+                    sample.shape[i] if p is None else int(p)
+                    for i, p in enumerate(inference_patch_sizes)
+                ),
+                weight_mode=weight_mode,
+            )
+
+            y_np[n] = recon
+
+    return y_np
