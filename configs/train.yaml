@@ -56,7 +56,7 @@ model:
   features: [32, 64, 128, 256, 512]
 
 optim:
-  lr: 0.001           # intial learning rate
+  lr: 0.0005           # intial learning rate
   factor: 0.5         # learning rate is multiplied by factor after step_size epochs
   step_size: 50
   min_lr: 0.00002     # once this learning rate is reached, it is not further reduced

@@ -331,7 +331,7 @@ def infer(
         raise ValueError(f"Unsupported spatial_dim={spatial_dim}. Expected 2 or 3.")
 
     # ---- load checkpoint ----
-    state = torch.load(ckpt_path, map_location=device)
+    state = torch.load(ckpt_path, map_location=device, weights_only=False)
     state_dict = state.get("model_state", state)
     model.load_state_dict(state_dict, strict=True)
 
