@@ -49,7 +49,7 @@ def prepare_dataset(
     channel_axis,
     masked_axes,
     fixed_indices,
-    phase_prob: float,
+    augmentation,
     normalization: bool,
     patching_enabled: bool,
     patch_sizes,
@@ -69,7 +69,7 @@ def prepare_dataset(
         fixed_indices=fixed_indices,
         transform=transform,
         num_samples=num_samples,
-        phase_prob=phase_prob,
+        augmentation=augmentation,
         patching_enabled=patching_enabled,
         patch_sizes=tuple(patch_sizes),
     )
@@ -120,7 +120,6 @@ def train(
     val_samples = cfg.data.val_samples
 
     fixed_indices = getattr(cfg.data, "fixed_indices", None)
-    phase_prob = getattr(cfg.data, "phase_prob", 1.0)
     do_norm = getattr(cfg.data, "normalization", True)
     patching_enabled = cfg.patching.enabled
     patch_sizes = cfg.patching.patch_sizes
@@ -136,7 +135,7 @@ def train(
         channel_axis=channel_axis,
         masked_axes=masked_axes,
         fixed_indices=fixed_indices,
-        phase_prob=phase_prob,
+        augmentation=cfg.augmentation,
         normalization=do_norm,
         patching_enabled=patching_enabled,
         patch_sizes=patch_sizes,
@@ -152,7 +151,7 @@ def train(
         channel_axis=channel_axis,
         masked_axes=masked_axes,
         fixed_indices=fixed_indices,
-        phase_prob=phase_prob,
+        augmentation=None,
         normalization=do_norm,
         patching_enabled=patching_enabled,
         patch_sizes=patch_sizes,

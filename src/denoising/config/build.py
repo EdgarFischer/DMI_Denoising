@@ -1,5 +1,19 @@
 # src/denoising/config/build.py
-from .schema import Config, RunCfg, DataCfg, PatchingCfg, MaskCfg, ModelCfg, OptimCfg, InferenceCfg
+from .schema import (
+    Config,
+    RunCfg,
+    DataCfg,
+    GlobalPhaseAugCfg,
+    PermutationAugCfg,
+    InversionAugCfg,
+    GlobalScaleAugCfg,
+    AugmentationCfg,
+    PatchingCfg,
+    MaskCfg,
+    ModelCfg,
+    OptimCfg,
+    InferenceCfg,
+)
 
 def validate_config(cfg: Config) -> None:
     # --- patching ---
@@ -27,6 +41,25 @@ def validate_config(cfg: Config) -> None:
                 f"but got {len(cfg.inference.patch_strides)}."
             )
 
+    # --- augmentation ---
+    if cfg.augmentation is not None:
+        if not (0.0 <= cfg.augmentation.global_phase.p <= 1.0):
+            raise ValueError("augmentation.global_phase.p must be in [0, 1].")
+
+        if not (0.0 <= cfg.augmentation.permutation.p <= 1.0):
+            raise ValueError("augmentation.permutation.p must be in [0, 1].")
+
+        if not (0.0 <= cfg.augmentation.inversion.p <= 1.0):
+            raise ValueError("augmentation.inversion.p must be in [0, 1].")
+
+        if not (0.0 <= cfg.augmentation.global_scale.p <= 1.0):
+            raise ValueError("augmentation.global_scale.p must be in [0, 1].")
+
+        if cfg.augmentation.global_scale.min > cfg.augmentation.global_scale.max:
+            raise ValueError(
+                "augmentation.global_scale.min must be <= augmentation.global_scale.max."
+            )
+
 def build_config(raw: dict) -> Config:
     # --- run ---
     run = RunCfg(**raw["run"])
@@ -46,6 +79,39 @@ def build_config(raw: dict) -> Config:
         val_samples=int(data_raw["val_samples"]),
         normalization=bool(data_raw.get("normalization", True)),
     )
+
+    # --- augmentation ---
+    aug_raw = raw.get("augmentation", None)
+    augmentation = None
+    if aug_raw is not None:
+        gp_raw = aug_raw.get("global_phase", {})
+        perm_raw = aug_raw.get("permutation", {})
+        inv_raw = aug_raw.get("inversion", {})
+        scale_raw = aug_raw.get("global_scale", {})
+
+        augmentation = AugmentationCfg(
+            enabled=bool(aug_raw.get("enabled", True)),
+            global_phase=GlobalPhaseAugCfg(
+                enabled=bool(gp_raw.get("enabled", False)),
+                p=float(gp_raw.get("p", 1.0)),
+            ),
+            permutation=PermutationAugCfg(
+                enabled=bool(perm_raw.get("enabled", False)),
+                p=float(perm_raw.get("p", 0.0)),
+                axes=tuple(int(ax) for ax in perm_raw.get("axes", [])),
+            ),
+            inversion=InversionAugCfg(
+                enabled=bool(inv_raw.get("enabled", False)),
+                p=float(inv_raw.get("p", 0.0)),
+                axes=tuple(int(ax) for ax in inv_raw.get("axes", [])),
+            ),
+            global_scale=GlobalScaleAugCfg(
+                enabled=bool(scale_raw.get("enabled", False)),
+                p=float(scale_raw.get("p", 0.0)),
+                min=float(scale_raw.get("min", 1.0)),
+                max=float(scale_raw.get("max", 1.0)),
+            ),
+        )
 
     # --- patching ---
     patch_raw = raw.get("patching", {})
@@ -98,6 +164,7 @@ def build_config(raw: dict) -> Config:
     cfg = Config(
         run=run,
         data=data,
+        augmentation=augmentation,
         patching=patching,
         mask=mask,
         model=model,

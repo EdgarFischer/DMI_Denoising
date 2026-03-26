@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import Dataset
 from typing import Tuple, Optional, Dict
 from denoising.data.patching import get_random_patch_slices, extract_patch
+from denoising.data.augmentations import PatchAugmentationPipeline
 
 class MRSiNDataset(Dataset):
     """
@@ -34,7 +35,7 @@ class MRSiNDataset(Dataset):
         fixed_indices: Optional[Dict[int, int]] = None,
         transform=None,
         num_samples: int = 10000,
-        phase_prob: float = 1.0,
+        augmentation=None,
         patching_enabled: bool = False,
         patch_sizes: Optional[Tuple[Optional[int], ...]] = None,
     ):
@@ -45,7 +46,10 @@ class MRSiNDataset(Dataset):
         self.fixed = fixed_indices or {}
         self.transform = transform
         self.num_samples = int(num_samples)
-        self.phase_prob = float(phase_prob)
+        self.augmentation = (
+            PatchAugmentationPipeline(augmentation)
+            if augmentation is not None else None
+        )
         self.patching_enabled = bool(patching_enabled)
         self.patch_sizes = tuple(patch_sizes) if patch_sizes is not None else tuple()
 
@@ -99,11 +103,7 @@ class MRSiNDataset(Dataset):
         ]
         arr = self.data[tuple(slicer)]
 
-        # 2) Optional global phase augmentation
-        if self.phase_prob > 0 and np.random.rand() < self.phase_prob:
-            theta = np.random.rand() * 2 * np.pi
-            arr = arr * np.exp(1j * theta)
-
+        
         # 3) Reorder extracted sample into a STRUCTURED local representation
         #    without channel_axis: (*image_shape)
         #    with channel_axis   : (C, *image_shape)
@@ -140,6 +140,9 @@ class MRSiNDataset(Dataset):
         if self.patching_enabled:
             patch_slices = get_random_patch_slices(img.shape, self.patch_sizes)
             img = extract_patch(img, patch_slices)
+
+        if self.augmentation is not None:
+            img, local_axis_map = self.augmentation(img, local_axis_map)
 
         masked_axes_local = tuple(local_axis_map[ax] for ax in self.masked_axes)
 

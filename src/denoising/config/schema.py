@@ -22,6 +22,42 @@ class DataCfg:
     normalization: bool
 
 @dataclass(frozen=True)
+class GlobalPhaseAugCfg:
+    enabled: bool
+    p: float
+
+
+@dataclass(frozen=True)
+class PermutationAugCfg:
+    enabled: bool
+    p: float
+    axes: Tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class InversionAugCfg:
+    enabled: bool
+    p: float
+    axes: Tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class GlobalScaleAugCfg:
+    enabled: bool
+    p: float
+    min: float
+    max: float
+
+
+@dataclass(frozen=True)
+class AugmentationCfg:
+    enabled: bool
+    global_phase: GlobalPhaseAugCfg
+    permutation: PermutationAugCfg
+    inversion: InversionAugCfg
+    global_scale: GlobalScaleAugCfg
+
+@dataclass(frozen=True)
 class PatchingCfg:
     enabled: bool
     patch_sizes: Tuple[Optional[int], ...]
@@ -58,6 +94,7 @@ class InferenceCfg:
 class Config:
     run: RunCfg
     data: DataCfg
+    augmentation: Optional[AugmentationCfg]
     patching: PatchingCfg
     mask: MaskCfg
     model: ModelCfg

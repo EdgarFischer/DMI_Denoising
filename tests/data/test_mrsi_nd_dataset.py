@@ -15,7 +15,7 @@ def test_dataset_2d_without_channel_axis():
         channel_axis=None,
         masked_axes=(4,),
         num_samples=1,
-        phase_prob=0.0,
+        augmentation=None,
     )
 
     inp, tgt, mask = ds[0]
@@ -38,7 +38,7 @@ def test_dataset_2d_with_channel_axis_flattens_correctly():
         channel_axis=3,
         masked_axes=(4,),
         num_samples=1,
-        phase_prob=0.0,
+        augmentation=None,
     )
 
     inp, tgt, mask = ds[0]
@@ -74,7 +74,7 @@ def test_dataset_maps_global_masked_axes_to_local_axes():
         masked_axes=(4,),
         transform=tfm,
         num_samples=1,
-        phase_prob=0.0,
+        augmentation=None,
     )
 
     _ = ds[0]
@@ -103,7 +103,7 @@ def test_dataset_maps_channel_axis_to_local_axis_1():
         masked_axes=(3,),   # same as channel_axis
         transform=tfm,
         num_samples=1,
-        phase_prob=0.0,
+        augmentation=None,
     )
 
     _ = ds[0]

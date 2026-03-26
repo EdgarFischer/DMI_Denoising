@@ -16,6 +16,30 @@ data:
 
   normalization: True   # data is automatically normalized
 
+augmentation:
+  enabled: true
+
+  global_phase: # multiply full complex sample by exp(i * theta), theta ~ U(0, 2π)
+    enabled: true
+    p: 1.0
+    
+  permutation:  # randomly permute these global axes (if present in sample)
+    enabled: true
+    p: 1
+    axes: [0, 1]
+   
+  inversion: # random flips along these global axes
+    enabled: true
+    p: 1
+    axes: [0, 1]
+    
+  global_scale:  # multiply full sample by scalar ~ U(min, max)
+    enabled: true
+    p: 1
+    min: 0.9
+    max: 1.1
+   
+
 patching: # Patching along network input axes, null = full axis, number = patch size along that axis
   enabled: true
   patch_sizes: [8, 8, 8, null] # with channel_axis C: [C, image_axes], else: [image_axes]
