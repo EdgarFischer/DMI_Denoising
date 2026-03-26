@@ -23,6 +23,18 @@ Users can freely choose which axes of the data are processed by the network, ena
 - **Optional channel folding**  
   One additional axis can be mapped to the channel dimension, allowing the network to process up to four dimensions simultaneously.
 
+- **Patch-wise training and inference**  
+  Training and inference can be performed on randomly sampled patches instead of full volumes.  
+  Patch sizes can be specified independently for each network axis and channel axis, enabling memory-efficient training and flexible receptive fields.
+
+- **Data augmentation for complex-valued data**  
+  Built-in augmentation pipeline includes:
+  - global phase rotations
+  - global intensity scaling
+  - axis-wise flips (inversion)
+  - axis permutations  
+  All augmentations respect the complex-valued structure of the data.
+
 - **2D and 3D U-Net architectures**  
   The model is automatically configured as a 2D or 3D U-Net depending on the selected axes.
 
@@ -34,6 +46,10 @@ Users can freely choose which axes of the data are processed by the network, ena
 
 - **Reproducible environment**  
   Docker environment, automated tests, and CI ensure reproducibility.
+
+- **Checkpointing and training continuation**  
+  Training can be resumed from checkpoints with full restoration of optimizer,
+  scheduler, and random states.
 
 ## Installation
 
@@ -129,6 +145,23 @@ The configuration file specifies e.g.
 See `configs/train.yaml` for a fully documented example configuration.
 
 During training, the configuration file and the relevant source code are automatically copied to the experiment directory to ensure full reproducibility.
+
+#### Patch-wise training
+
+Training can be performed on randomly sampled patches instead of full volumes.
+Patch sizes are configurable per axis via the YAML configuration.
+
+#### Data augmentation
+
+A flexible augmentation pipeline is available for complex-valued data, including
+phase rotations, intensity scaling, axis flips, and permutations.
+
+All augmentations are configured via the YAML file.
+
+#### Resume / pretrained training
+
+Training can be resumed from checkpoints or initialized from pretrained models
+directly via the configuration file.
 
 ## Inference
 
