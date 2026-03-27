@@ -137,7 +137,7 @@ def train(
     logger.info(f"Start Training ({self_mode.upper()}) – Seed {seed}")
 
     # ----- Dataset params -----
-    base_path = "datasets"
+    base_path = cfg.data.base_dir
     image_axes = cfg.data.image_axes
     channel_axis = cfg.data.channel_axis
     fourier_axes = cfg.data.fourier_axes

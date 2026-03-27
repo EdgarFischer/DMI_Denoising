@@ -1,13 +1,14 @@
 run:
-  name: Sim_Lesion_double_xyf-z_continued #"Sim_Lesion_double_xyf-z_continued" # give your model a name
-  base_dir: "trained_models" # this is where you want to save the trained model
+  name: TEST #"Sim_Lesion_double_xyf-z_continued" # give your model a name
+  base_dir: "trained_models" # this is where you want to save the trained model, diretory relative to project root
   gpu: "3" # check GPU availabiliy with nvidia-smi
   seed: 42
 
 resume_training: True # load pretrained model exactly with optimizer state etc etc 
-resume_ckpt: "trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
+resume_ckpt: #"trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
 
 data:
+  base_dir: "datasets/DMI/Simulations" #path to your data folders, relative to project root
   train: ["Simulated_Lesion_double_2_normalized_tMPPCA_5D", "Simulated_Lesion_double_3_normalized_tMPPCA_5D", "Simulated_Lesion_double_4_normalized_tMPPCA_5D", "Simulated_Lesion_double_5_normalized_tMPPCA_5D", "Simulated_Lesion_double_6_normalized_tMPPCA_5D"]
   val:   ["Simulated_Lesion_double_1_normalized_tMPPCA_5D"]
 
