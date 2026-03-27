@@ -1,11 +1,11 @@
 run:
-  name: Sim_Lesion_double_xyf-z #"Sim_Lesion_double_xyf-z_continued" # give your model a name
+  name: Sim_Lesion_double_xyf-z_continued #"Sim_Lesion_double_xyf-z_continued" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model
   gpu: "3" # check GPU availabiliy with nvidia-smi
   seed: 42
 
 resume_training: True # load pretrained model exactly with optimizer state etc etc 
-resume_ckpt: #"trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
+resume_ckpt: "trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
 
 data:
   train: ["Simulated_Lesion_double_2_normalized_tMPPCA_5D", "Simulated_Lesion_double_3_normalized_tMPPCA_5D", "Simulated_Lesion_double_4_normalized_tMPPCA_5D", "Simulated_Lesion_double_5_normalized_tMPPCA_5D", "Simulated_Lesion_double_6_normalized_tMPPCA_5D"]
@@ -60,7 +60,7 @@ optim:
   factor: 0.5         # learning rate is multiplied by factor after step_size epochs
   step_size: 50
   min_lr: 0.00002     # once this learning rate is reached, it is not further reduced
-  epochs: 500
+  epochs: 510
 
   batch_size: 140 # 160 600 typically for 2D
   num_workers: 0

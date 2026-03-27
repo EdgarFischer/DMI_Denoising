@@ -273,7 +273,7 @@ def train(
     best_val = float("inf")
 
     if ckpt_path and os.path.isfile(ckpt_path):
-        ckpt = torch.load(ckpt_path, map_location=device)
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
         state_dict = ckpt.get("model_state", ckpt)
         strict_flag = getattr(cfg, "pretrained_strict", True)
 
