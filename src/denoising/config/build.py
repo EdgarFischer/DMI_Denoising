@@ -68,6 +68,7 @@ def build_config(raw: dict) -> Config:
     data_raw = raw["data"]
     data = DataCfg(
         base_dir=str(data_raw.get("base_dir", "")),
+        data_filename=str(data_raw.get("data_filename", "data.npy")),
         train=list(data_raw["train"]),
         val=list(data_raw["val"]),
         image_axes=tuple(data_raw["image_axes"]),

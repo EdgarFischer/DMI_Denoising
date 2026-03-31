@@ -342,7 +342,13 @@ def compute_correlation_mean_std(corrs_list):
 
     return mean_corrs, std_corrs
 
-def _build_load_kwargs(suffix="normalized", base_dir=None, method=None):
+def _build_load_kwargs(
+    suffix="normalized",
+    base_dir=None,
+    method=None,
+    npy_name="data.npy",
+    mat_name="CombinedCSI.mat",
+):
     kwargs = {}
 
     if suffix not in (None, ""):
@@ -353,6 +359,12 @@ def _build_load_kwargs(suffix="normalized", base_dir=None, method=None):
 
     if method is not None:
         kwargs["method"] = method
+
+    if npy_name is not None:
+        kwargs["npy_name"] = npy_name
+
+    if mat_name is not None:
+        kwargs["mat_name"] = mat_name
 
     return kwargs
 
@@ -373,7 +385,14 @@ def squeeze_trailing_singleton_dims(dataset_list, min_ndim=4):
     return squeezed
 
 
-def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", base_dir=None):
+def _load_or_build_method_dataset(
+    subject_ids,
+    method_cfg,
+    suffix="normalized",
+    base_dir=None,
+    npy_name="data.npy",
+    mat_name="CombinedCSI.mat",
+):
     """
     Returns a dataset list for one method.
     """
@@ -383,6 +402,8 @@ def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", 
         kwargs = _build_load_kwargs(
             suffix=suffix,
             base_dir=base_dir,
+            npy_name=npy_name,
+            mat_name=mat_name,
         )
         data_list = load_dataset_list(subject_ids, **kwargs)
         return squeeze_trailing_singleton_dims(data_list, min_ndim=4)
@@ -392,6 +413,8 @@ def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", 
             suffix=suffix,
             base_dir=base_dir,
             method=method_cfg["method"],
+            npy_name=npy_name,
+            mat_name=mat_name,
         )
         data_list = load_dataset_list(subject_ids, **kwargs)
         return squeeze_trailing_singleton_dims(data_list, min_ndim=4)
@@ -400,6 +423,8 @@ def _load_or_build_method_dataset(subject_ids, method_cfg, suffix="normalized", 
         kwargs = _build_load_kwargs(
             suffix=suffix,
             base_dir=base_dir,
+            npy_name=npy_name,
+            mat_name=mat_name,
         )
         raw_list = load_dataset_list(subject_ids, **kwargs)
         raw_list = squeeze_trailing_singleton_dims(raw_list, min_ndim=4)
@@ -685,6 +710,8 @@ def run_noise_analysis_pipeline(
     fid_window=(0.3, 0.9),
     suffix="normalized",
     base_dir=None,
+    npy_name="data.npy",
+    mat_name="CombinedCSI.mat",
     max_lag=None,
     compute_spatial=True,
     compute_pairwise=False,
@@ -745,6 +772,8 @@ def run_noise_analysis_pipeline(
         kwargs = _build_load_kwargs(
             suffix=suffix,
             base_dir=base_dir,
+            npy_name=npy_name,
+            mat_name=mat_name,
         )
         raw_list = load_dataset_list(subject_ids, **kwargs)
         raw_list = squeeze_trailing_singleton_dims(raw_list, min_ndim=4)
@@ -759,6 +788,8 @@ def run_noise_analysis_pipeline(
             method_cfg=method_cfg,
             suffix=suffix,
             base_dir=base_dir,
+            npy_name=npy_name,
+            mat_name=mat_name,
         )
         datasets_by_method[method_name] = data_list
 

@@ -13,6 +13,7 @@ class RunCfg:
 @dataclass(frozen=True)
 class DataCfg:
     base_dir: str
+    data_filename: str
     train: List[str]
     val: List[str]
     image_axes: Tuple[int, ...]

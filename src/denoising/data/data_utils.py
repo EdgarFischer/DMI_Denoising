@@ -1,12 +1,15 @@
 import os
 import numpy as np
 from scipy.io import loadmat
+import logging 
 
 def load_and_preprocess_data(
     folder_names: list,
     base_path: str,
     fourier_axes: list = None,
-    normalization: bool = True
+    normalization: bool = True,
+    npy_name: str = "data.npy",
+    mat_name: str = "CombinedCSI.mat",
 ) -> np.ndarray:
     """
     Loads 'data.npy' from each folder under base_path and concatenates along last axis (D).
@@ -20,20 +23,22 @@ def load_and_preprocess_data(
     arrays = []
     for fold in folder_names:
 
-        npy_fn = os.path.join(base_path, fold, "data.npy")
-        mat_fn = os.path.join(base_path, fold, "CombinedCSI.mat")
+        npy_fn = os.path.join(base_path, fold, npy_name)
+        mat_fn = os.path.join(base_path, fold, mat_name)
 
         if os.path.exists(npy_fn):
             arr = np.load(npy_fn)  # expected shape (X,Y,Z,t,T)
+            logging.info(f"[LOAD] {fold} (npy) loaded with shape {arr.shape}")
 
         elif os.path.exists(mat_fn):
             mat = loadmat(mat_fn)
             arr = mat["csi"]["Data"][0, 0]
+            logging.info(f"[LOAD] {fold} (mat) loaded with shape {arr.shape}")
 
         else:
             raise FileNotFoundError(
                 f"No data file found in {os.path.join(base_path, fold)} "
-                f"(expected data.npy or CombinedCSI.mat)"
+                f"(expected {npy_name} or {mat_name})"
             )
 
         if arr.ndim == 4:          # (X,Y,Z,t)
@@ -62,7 +67,9 @@ def load_dataset_list_from_folders(
     folder_names,
     base_path,
     fourier_axes=None,
-    normalization=True
+    normalization=True,
+    npy_name="data.npy",
+    mat_name="CombinedCSI.mat",
 ):
     """
     Wrapper um load_and_preprocess_data, der statt eines gestackten Arrays
@@ -78,7 +85,9 @@ def load_dataset_list_from_folders(
         folder_names=folder_names,
         base_path=base_path,
         fourier_axes=fourier_axes,
-        normalization=normalization
+        normalization=normalization,
+        npy_name=npy_name,
+        mat_name=mat_name,
     )
 
     dataset_list = [stacked[..., i] for i in range(stacked.shape[-1])]
@@ -90,7 +99,9 @@ def load_dataset_list(
     base_dir="../datasets",
     suffix=None,
     fourier_axes=None,
-    normalization=False
+    normalization=False,
+    npy_name="data.npy",
+    mat_name="CombinedCSI.mat",
 ):
     """
     Lädt mehrere Datensätze aus Ordnern.
@@ -123,7 +134,9 @@ def load_dataset_list(
         folder_names=folder_names,
         base_path=base_dir,
         fourier_axes=fourier_axes,
-        normalization=normalization
+        normalization=normalization,
+        npy_name=npy_name,
+        mat_name=mat_name,
     )
 
 def low_rank_5d(data, rank):

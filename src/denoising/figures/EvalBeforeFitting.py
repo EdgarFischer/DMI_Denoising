@@ -138,52 +138,18 @@ def plot_voxel_spectra_over_z(
     x,
     y,
     T=None,
-    z_max=None,          # optional: nur 0..z_max-1 plotten
+    z_max=None,
     n_cols=2,
-    freq_axis=3,         # default: (x,y,z,f[,T]) -> f ist axis=3
-    z_axis=2,            # z ist axis=2
-    mag=True,            # True -> abs(), False -> raw complex
+    freq_axis=3,
+    z_axis=2,
+    mag=True,
     sharex=True,
     sharey=True,
     figsize_per_row=3.0,
     legend=True,
+    min_t_index=0,
+    max_t_index=None,   # <-- neu
 ):
-    """
-    Plots spectra for a fixed voxel (x,y) over all z-slices.
-    Each subplot is one z, and within each subplot all datasets in Data_ft are overlaid.
-
-    Supported shapes per dataset:
-        4D: (x, y, z, f)
-        5D: (x, y, z, f, T)
-
-    Parameters
-    ----------
-    Data_ft : list of np.ndarray
-        Liste von 4D- oder 5D-Arrays.
-    Titles : list of str
-        Titel für die Datensätze, gleiche Länge wie Data_ft.
-    x, y : int
-        Fester Voxelindex.
-    T : int or None
-        Index entlang T für 5D-Daten. Bei 4D-Daten ignoriert.
-    z_max : int or None
-        Falls gesetzt, werden nur z=0..z_max-1 geplottet.
-    n_cols : int
-        Anzahl Subplots pro Zeile.
-    freq_axis : int
-        Achse der Frequenzdimension.
-    z_axis : int
-        Achse der z-Dimension.
-    mag : bool
-        True -> Betrag plotten, False -> rohes Signal.
-    sharex, sharey : bool
-        Achsen zwischen Subplots teilen.
-    figsize_per_row : float
-        Höhe pro Subplot-Zeile.
-    legend : bool
-        Ob eine Legende angezeigt werden soll.
-    """
-
     import numpy as np
     import matplotlib.pyplot as plt
 
@@ -192,7 +158,6 @@ def plot_voxel_spectra_over_z(
     if len(Data_ft) != len(Titles):
         raise ValueError("Data_ft and Titles must have same length.")
 
-    # Konsistenzchecks
     first = Data_ft[0]
     if first.ndim not in (4, 5):
         raise ValueError("Arrays in Data_ft must be 4D or 5D.")
@@ -200,21 +165,33 @@ def plot_voxel_spectra_over_z(
     Z = first.shape[z_axis]
     F = first.shape[freq_axis]
 
+    # --- neue checks ---
+    if not (0 <= min_t_index < F):
+        raise ValueError(f"min_t_index must be between 0 and {F-1}, got {min_t_index}.")
+
+    if max_t_index is None:
+        max_t_index = F
+    else:
+        if not (0 < max_t_index <= F):
+            raise ValueError(f"max_t_index must be between 1 and {F}, got {max_t_index}.")
+
+    if min_t_index >= max_t_index:
+        raise ValueError("min_t_index must be smaller than max_t_index.")
+
     for i, d in enumerate(Data_ft):
         if d.ndim not in (4, 5):
             raise ValueError(f"Data_ft[{i}] has ndim={d.ndim}, expected 4 or 5.")
         if d.shape[z_axis] != Z:
-            raise ValueError("All arrays in Data_ft must have the same z dimension.")
+            raise ValueError("All arrays must have same z dimension.")
         if d.shape[freq_axis] != F:
-            raise ValueError("All arrays in Data_ft must have the same frequency dimension.")
+            raise ValueError("All arrays must have same frequency dimension.")
         if d.ndim == 5 and T is None:
-            raise ValueError("T must be provided when plotting 5D arrays.")
+            raise ValueError("T must be provided for 5D arrays.")
 
-    # Optional truncate z
     if z_max is not None:
         Z = min(Z, int(z_max))
 
-    freqs = np.arange(F)
+    freqs = np.arange(min_t_index, max_t_index)
 
     n_rows = int(np.ceil(Z / n_cols))
     fig, axes = plt.subplots(
@@ -231,34 +208,50 @@ def plot_voxel_spectra_over_z(
     def get_spec(d, z):
         if d.ndim == 4:
             spec = d[x, y, z, :]
-        elif d.ndim == 5:
-            spec = d[x, y, z, :, T]
         else:
-            raise ValueError(f"Unsupported ndim={d.ndim}")
+            spec = d[x, y, z, :, T]
+        spec = spec[min_t_index:max_t_index]  # <-- geändert
         return np.abs(spec) if mag else spec
 
     for z in range(Z):
         i, j = divmod(z, n_cols)
         ax = axes[i, j]
 
-        for d, title in zip(Data_ft, Titles):
-            ax.plot(freqs, get_spec(d, z), '-', label=title, linewidth=1)
+        for idx, (d, title) in enumerate(zip(Data_ft, Titles)):
+            if idx == 0:
+                ax.plot(
+                    freqs,
+                    get_spec(d, z),
+                    color="black",
+                    linewidth=1.5,
+                    alpha=0.8,
+                    zorder=1,
+                    label=title,
+                )
+            else:
+                ax.plot(
+                    freqs,
+                    get_spec(d, z),
+                    linewidth=1.5,
+                    alpha=0.7,
+                    zorder=2,
+                    label=title,
+                )
 
         ax.set_title(f"z={z}")
-        ax.grid(True, linestyle=':', alpha=0.3)
+        ax.grid(True, linestyle=":", alpha=0.3)
 
         if legend:
-            ax.legend(fontsize='small', loc='upper right')
+            ax.legend(fontsize="small", loc="upper right")
 
         if i == n_rows - 1:
             ax.set_xlabel("Frequency bin")
         if j == 0:
             ax.set_ylabel("Magnitude" if mag else "Signal")
 
-    # Leere Subplots ausblenden
     for idx in range(Z, n_rows * n_cols):
         i, j = divmod(idx, n_cols)
-        axes[i, j].axis('off')
+        axes[i, j].axis("off")
 
     return fig, axes
 
@@ -270,29 +263,6 @@ def plot_average_spectra_over_T(
     sharey=True,
     figsize_per_row=3.0,
 ):
-    """
-    Plottet gemittelte Spektren.
-
-    Supported shapes per entry in Avg:
-        1D: (F,)
-        2D: (F, T)
-
-    Parameters
-    ----------
-    Avg : list of np.ndarray
-        Liste von Arrays mit Shape (F,) oder (F, T).
-    Titles : list of str
-        Labels für die Arrays, gleiche Länge wie Avg.
-    n_cols : int
-        Anzahl Subplots pro Zeile.
-    mag : bool
-        True -> Betrag plotten, False -> rohes Signal.
-    sharey : bool
-        Ob die y-Achse zwischen Subplots geteilt wird.
-    figsize_per_row : float
-        Höhe pro Subplot-Zeile.
-    """
-
     import numpy as np
     import matplotlib.pyplot as plt
 
@@ -310,17 +280,15 @@ def plot_average_spectra_over_T(
 
     for i, avg in enumerate(Avg):
         if avg.ndim not in (1, 2):
-            raise ValueError(f"Avg[{i}] has ndim={avg.ndim}, expected 1 or 2.")
+            raise ValueError(f"Avg[{i}] invalid ndim.")
         if avg.shape[0] != F:
-            raise ValueError("All arrays in Avg must have the same frequency dimension.")
+            raise ValueError("All arrays must have same frequency dimension.")
 
-        if first.ndim == 1 and avg.ndim != 1:
-            raise ValueError("Do not mix 1D and 2D arrays in Avg.")
-        if first.ndim == 2 and avg.ndim != 2:
-            raise ValueError("Do not mix 1D and 2D arrays in Avg.")
+        if first.ndim != avg.ndim:
+            raise ValueError("Do not mix 1D and 2D arrays.")
 
         if avg.ndim == 2 and avg.shape[1] != n_T:
-            raise ValueError("All 2D arrays in Avg must have the same T dimension.")
+            raise ValueError("All 2D arrays must have same T dimension.")
 
     freqs = np.arange(F)
 
@@ -336,20 +304,35 @@ def plot_average_spectra_over_T(
     axes = np.atleast_2d(axes)
 
     def get_line(avg, T_idx=0):
-        if avg.ndim == 1:
-            line = avg
-        elif avg.ndim == 2:
-            line = avg[:, T_idx]
-        else:
-            raise ValueError(f"Unsupported ndim={avg.ndim}")
+        line = avg if avg.ndim == 1 else avg[:, T_idx]
         return np.abs(line) if mag else line
 
     for T in range(n_T):
         i, j = divmod(T, n_cols)
         ax = axes[i, j]
 
-        for avg, title in zip(Avg, Titles):
-            ax.plot(freqs, get_line(avg, T), label=title)
+        for idx, (avg, title) in enumerate(zip(Avg, Titles)):
+            if idx == 0:
+                # Deep → Hintergrund
+                ax.plot(
+                    freqs,
+                    get_line(avg, T),
+                    color="black",
+                    linewidth=1.5,
+                    alpha=0.8,
+                    zorder=1,
+                    label=title,
+                )
+            else:
+                # andere → darüber
+                ax.plot(
+                    freqs,
+                    get_line(avg, T),
+                    linewidth=1.5,
+                    alpha=0.7,
+                    zorder=2,
+                    label=title,
+                )
 
         if first.ndim == 1:
             ax.set_title("Average spectrum")
@@ -359,9 +342,9 @@ def plot_average_spectra_over_T(
         ax.set_xlabel("Frequency bin")
         ax.set_ylabel("Magnitude" if mag else "Signal")
         ax.grid(True)
+
         ax.legend()
 
-    # Leere Subplots ausblenden
     for idx in range(n_T, n_rows * n_cols):
         i, j = divmod(idx, n_cols)
         axes[i, j].axis("off")

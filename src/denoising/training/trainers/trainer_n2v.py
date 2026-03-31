@@ -44,6 +44,7 @@ def prepare_dataset(
     num_samples: int,
     *,
     base_path: str,
+    data_filename: str,
     fourier_axes,
     image_axes,
     channel_axis,
@@ -59,6 +60,7 @@ def prepare_dataset(
         base_path=base_path,
         fourier_axes=list(fourier_axes),
         normalization=normalization,
+        npy_name=data_filename,
     )
 
     return MRSiNDataset(
@@ -138,6 +140,7 @@ def train(
 
     # ----- Dataset params -----
     base_path = cfg.data.base_dir
+    data_filename = cfg.data.data_filename
     image_axes = cfg.data.image_axes
     channel_axis = cfg.data.channel_axis
     fourier_axes = cfg.data.fourier_axes
@@ -157,6 +160,7 @@ def train(
         transform=transform_train,
         num_samples=num_samples,
         base_path=base_path,
+        data_filename=data_filename,
         fourier_axes=fourier_axes,
         image_axes=image_axes,
         channel_axis=channel_axis,
@@ -173,6 +177,7 @@ def train(
         transform=transform_val,
         num_samples=val_samples,
         base_path=base_path,
+        data_filename=data_filename,
         fourier_axes=fourier_axes,
         image_axes=image_axes,
         channel_axis=channel_axis,
