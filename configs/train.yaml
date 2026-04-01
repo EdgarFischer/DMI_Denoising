@@ -1,5 +1,5 @@
 run:
-  name: Proton_xyf_B4WALINET #"Sim_Lesion_double_xyf-z_continued" # give your model a name
+  name: Proton_B4WALINET_64_64_840 #"Sim_Lesion_double_xyf-z_continued" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model, diretory relative to project root
   gpu: "3" # check GPU availabiliy with nvidia-smi
   seed: 42
@@ -18,8 +18,8 @@ data:
   image_axes: [0, 1, 3]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
   channel_axis: null     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
-  num_samples: 500   #10000  # how many voxels are chosen per epoch
-  val_samples: 30    #2000
+  num_samples: 35   #10000  # how many voxels are chosen per epoch
+  val_samples: 7    #2000
 
   normalization: True   # data is automatically normalized
 
@@ -32,12 +32,12 @@ augmentation:
     
   permutation:  # randomly permute these global axes (if present in sample)
     enabled: true
-    p: 0.4
+    p: 1
     axes: [0, 1]
    
   inversion: # random flips along these global axes
     enabled: true
-    p: 0.4
+    p: 1
     axes: [0, 1]
     
   global_scale:  # multiply full sample by scalar ~ U(min, max)
@@ -49,7 +49,7 @@ augmentation:
 
 patching: # Patching along network input axes, null = full axis, number = patch size along that axis
   enabled: true
-  patch_sizes: [8, 8, null] # with channel_axis C: [C, image_axes], else: [image_axes]
+  patch_sizes: [64, 64, null] # with channel_axis C: [C, image_axes], else: [image_axes]
 
 masking:
   masked_axes: [3]    # global data axes to be masked; can contain one axis (1D mask) or two axes (2D mask). The mask is then replicated along the remaining dimensions.
@@ -66,9 +66,9 @@ optim:
   min_lr: 0.00002     # once this learning rate is reached, it is not further reduced
   epochs: 500
 
-  batch_size: 20 # 160 600 typically for 2D
+  batch_size: 4 # 160 600 typically for 2D
   num_workers: 0
 
 inference:
-  patch_strides: [4, 4, null] # with channel_axis C: [C, image_axes], else: [image_axes]
+  patch_strides: [32, 32, null] # with channel_axis C: [C, image_axes], else: [image_axes]
   weight_mode: "hann"   # hann or average possible

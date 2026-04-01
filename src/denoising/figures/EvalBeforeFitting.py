@@ -350,3 +350,205 @@ def plot_average_spectra_over_T(
         axes[i, j].axis("off")
 
     return fig, axes
+
+from matplotlib.widgets import Slider
+
+
+def interactive_spectra_viewer(
+    image_volume,
+    spectrum_func1,
+    spectrum_func2,
+    label1="Spectrum 1",
+    label2="Spectrum 2",
+    f_min=None,
+    f_max=None,
+    z_init=0,
+    x_init=0,
+    y_init=0,
+    cmap="gray",
+    figsize=(11, 4),
+    legend=True,
+):
+    """
+    Interaktiver Viewer:
+    - links: 3D-Bildvolumen image_volume[x, y, z]
+    - rechts: zwei 1D-Spektren aus spectrum_func1 / spectrum_func2
+
+    Parameter
+    ----------
+    image_volume : np.ndarray
+        Array mit shape (X, Y, Z), das links angezeigt wird.
+
+    spectrum_func1 : callable
+        Funktion f(x, y, z) -> 1D array der Länge F
+
+    spectrum_func2 : callable
+        Funktion f(x, y, z) -> 1D array der Länge F
+
+    label1, label2 : str
+        Legenden für die beiden Spektren.
+
+    f_min, f_max : int oder None
+        Frequenzindexbereich für die Anzeige.
+        Default: vollständiges Spektrum.
+
+    z_init, x_init, y_init : int
+        Startposition.
+
+    cmap : str
+        Colormap für linkes Bild.
+
+    figsize : tuple
+        Figuregröße.
+
+    legend : bool
+        Ob rechts eine Legende angezeigt werden soll.
+    """
+
+    image_volume = np.asarray(image_volume)
+
+    if image_volume.ndim != 3:
+        raise ValueError("image_volume muss shape (X, Y, Z) haben.")
+
+    X, Y, Z = image_volume.shape
+
+    if not (0 <= z_init < Z):
+        raise ValueError(f"z_init muss zwischen 0 und {Z-1} liegen.")
+    if not (0 <= x_init < X):
+        raise ValueError(f"x_init muss zwischen 0 und {X-1} liegen.")
+    if not (0 <= y_init < Y):
+        raise ValueError(f"y_init muss zwischen 0 und {Y-1} liegen.")
+
+    spec1_init = np.asarray(spectrum_func1(x_init, y_init, z_init)).squeeze()
+    spec2_init = np.asarray(spectrum_func2(x_init, y_init, z_init)).squeeze()
+
+    if spec1_init.ndim != 1 or spec2_init.ndim != 1:
+        raise ValueError("spectrum_func1 und spectrum_func2 müssen 1D-Arrays zurückgeben.")
+
+    if len(spec1_init) != len(spec2_init):
+        raise ValueError("Beide Spektren müssen die gleiche Länge haben.")
+
+    F = len(spec1_init)
+
+    if f_min is None:
+        f_min = 0
+    if f_max is None:
+        f_max = F - 1
+
+    if not (0 <= f_min <= f_max < F):
+        raise ValueError(f"f_min/f_max müssen im Bereich 0 bis {F-1} liegen.")
+
+    f_axis = np.arange(f_min, f_max + 1)
+
+    fig, (ax_img, ax_spec) = plt.subplots(1, 2, figsize=figsize)
+    plt.subplots_adjust(bottom=0.25)
+
+    # Linkes Bild
+    img0 = image_volume[:, :, z_init]
+    im = ax_img.imshow(img0.T, origin="lower", cmap=cmap)
+    ax_img.set_title(f"Slice z={z_init}")
+    ax_img.set_xlabel("x")
+    ax_img.set_ylabel("y")
+
+    marker, = ax_img.plot(x_init, y_init, "ro")
+
+    # Rechte Spektren mit deinen Wunschfarben
+    line1, = ax_spec.plot(
+        f_axis,
+        spec1_init[f_min:f_max + 1],
+        color="black",
+        linewidth=1.5,
+        alpha=0.8,
+        zorder=1,
+        label=label1,
+    )
+
+    line2, = ax_spec.plot(
+        f_axis,
+        spec2_init[f_min:f_max + 1],
+        color="C0",
+        linewidth=1.5,
+        alpha=0.7,
+        zorder=2,
+        label=label2,
+    )
+
+    ax_spec.set_title(f"Spectra at x={x_init}, y={y_init}, z={z_init}")
+    ax_spec.set_xlabel("f")
+    ax_spec.set_ylabel("signal")
+
+    if legend:
+        ax_spec.legend()
+
+    ax_spec.relim()
+    ax_spec.autoscale_view()
+
+    current = {"x": x_init, "y": y_init, "z": z_init}
+
+    # Slider
+    ax_slider = plt.axes([0.2, 0.1, 0.6, 0.03])
+    z_slider = Slider(
+        ax=ax_slider,
+        label="z",
+        valmin=0,
+        valmax=Z - 1,
+        valinit=z_init,
+        valstep=1
+    )
+
+    def redraw_spectra():
+        x = current["x"]
+        y = current["y"]
+        z = current["z"]
+
+        spec1 = np.asarray(spectrum_func1(x, y, z)).squeeze()
+        spec2 = np.asarray(spectrum_func2(x, y, z)).squeeze()
+
+        if spec1.ndim != 1 or spec2.ndim != 1:
+            raise ValueError("Spektrumsfunktionen müssen 1D-Arrays zurückgeben.")
+        if len(spec1) != F or len(spec2) != F:
+            raise ValueError("Spektrumlänge darf sich nicht zwischen Voxeln ändern.")
+
+        line1.set_data(f_axis, spec1[f_min:f_max + 1])
+        line2.set_data(f_axis, spec2[f_min:f_max + 1])
+
+        ax_spec.relim()
+        ax_spec.autoscale_view()
+        ax_spec.set_title(f"Spectra at x={x}, y={y}, z={z}")
+
+    def onclick(event):
+        if event.inaxes != ax_img:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+
+        x = int(round(event.xdata))
+        y = int(round(event.ydata))
+
+        if x < 0 or x >= X or y < 0 or y >= Y:
+            return
+
+        current["x"] = x
+        current["y"] = y
+
+        marker.set_data([x], [y])
+        redraw_spectra()
+        fig.canvas.draw_idle()
+
+    def update_z(val):
+        z = int(z_slider.val)
+        current["z"] = z
+
+        new_img = image_volume[:, :, z]
+        im.set_data(new_img.T)
+        ax_img.set_title(f"Slice z={z}")
+
+        redraw_spectra()
+        fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("button_press_event", onclick)
+    z_slider.on_changed(update_z)
+
+    plt.show()
+
+    return fig, (ax_img, ax_spec), z_slider
