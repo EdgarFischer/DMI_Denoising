@@ -70,9 +70,9 @@ def main(cfg, config_path: str | None = None):
         f"num_pixels={m.num_pixels} window_size={m.window_size}"
     )
 
-    if len(m.masked_axes) not in (1, 2):
+    if len(m.masked_axes) not in (1, 2, 3):
         raise ValueError(
-            f"mask.masked_axes must contain 1 or 2 axes, got {m.masked_axes}"
+            f"mask.masked_axes must contain 1, 2 or 3 axes, got {m.masked_axes}"
         )
 
     transform_train = StratifiedAxisMasking(
