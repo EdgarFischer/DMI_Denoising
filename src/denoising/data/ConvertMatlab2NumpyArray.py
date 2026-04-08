@@ -1,16 +1,17 @@
 import numpy as np
 import h5py
 import os
+from pathlib import Path
 
 # Arbeitsverzeichnis auf aktuelle Datei setzen
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIRECTORY = Path("/workspace/Denoising/datasets/Proton/B0corrected_wo_LipidMask")
 
-Ordner_Liste = ['sf_brain_DMI_HC_pilot_normalized_tMPPCA_5D']
-DATA_DIRECTORY = "../datasets/"
+# automatisch alle Vol*-Ordner finden
+Ordner_Liste = [f for f in DATA_DIRECTORY.glob("Vol*") if f.is_dir()]
 
 for Ordner in Ordner_Liste:
-    input_path = os.path.join(DATA_DIRECTORY, Ordner, 'data.mat')
-    output_path = os.path.join(DATA_DIRECTORY, Ordner, 'data.npy')
+    input_path = Ordner / 'OriginalData/data_after_walinet_tMPPCA.mat'
+    output_path = Ordner / 'OriginalData/data_after_walinet_tMPPCA.npy'
 
     print(f"Lade {input_path} ...")
     with h5py.File(input_path, 'r') as f:

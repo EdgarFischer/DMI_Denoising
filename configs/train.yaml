@@ -1,7 +1,7 @@
 run:
-  name: Proton_B4WALINET_64_64_840 #"Sim_Lesion_double_xyf-z_continued" # give your model a name
+  name: Proton_After_WALINET_tMPPCA #"Sim_Lesion_double_xyf-z_continued" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model, diretory relative to project root
-  gpu: "3" # check GPU availabiliy with nvidia-smi
+  gpu: "1" # check GPU availabiliy with nvidia-smi
   seed: 42
 
 resume_training: True # load pretrained model exactly with optimizer state etc etc 
@@ -9,7 +9,7 @@ resume_ckpt: #"trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
 
 data:
   base_dir: "datasets/Proton/B0corrected_wo_LipidMask/" #path to your data folders, relative to project root
-  data_filename: "data.npy" # data_after_walinet.npy
+  data_filename: "data_after_walinet_tMPPCA.npy" # data_after_walinet.npy
   train: ["Vol6_Brisbane/OriginalData", "Vol3_Brisbane/OriginalData", "Vol4_Brisbane/OriginalData", "Vol5_Brisbane/OriginalData",
           "Vol2_London/OriginalData", "Vol3_London/OriginalData", "Vol4_London/OriginalData", "Vol5_London/OriginalData",
           "Vol6/OriginalData", "Vol7/OriginalData", "Vol8/OriginalData", "Vol9/OriginalData",]

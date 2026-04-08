@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from skimage.metrics import structural_similarity as ssim
 from cmcrameri import cm
+import h5py
 
 def _metrics(img, ref, clip_pct: float | None = None):
     """Berechnet **relativen RMSE** (rRMSE ∈ [0, 1] bei Min‑Max‑Norm), PSNR (dB) und
@@ -325,4 +326,114 @@ def plot_metab_ratio(
 
     plt.tight_layout(rect=[0,0,0.95,1])
     #plt.savefig(f"MetabRatio_{metab1}_{metab2}.jpg", dpi=200, bbox_inches='tight')
+    plt.show()
+
+def plot_lcmodel_comparison(
+    mat_paths,
+    col_titles,
+    slice_z=17,
+    low_pct=2,
+    high_pct=98,
+    figsize_per_col=4
+):
+    """
+    Plot comparison of LCModel maps across multiple .mat files.
+
+    Parameters
+    ----------
+    mat_paths : list of str
+        Paths to .mat files
+    col_titles : list of str
+        Titles for each column (same length as mat_paths)
+    slice_z : int
+        Z-slice to display
+    low_pct, high_pct : float
+        Percentiles for contrast scaling
+    figsize_per_col : float
+        Width per column in inches
+    """
+
+    assert len(mat_paths) == len(col_titles), "mat_paths und col_titles müssen gleich lang sein"
+    if len(mat_paths) == 0:
+        raise ValueError("mat_paths darf nicht leer sein")
+
+    # -------- Loader --------
+    def load_lcmodel_maps(mat_path):
+        with h5py.File(mat_path, 'r') as f:
+            metabos = f['AllMaps']['Metabos']
+            titles = []
+            for ref in metabos['Title'][0]:
+                dset = f[ref]
+                titles.append(dset[:].tobytes().decode('utf-16-le'))
+            maps = metabos['Normal'][:]
+            return titles, np.asarray(maps)
+
+    # -------- Load all files --------
+    all_titles, all_maps = [], []
+    for p in mat_paths:
+        t, m = load_lcmodel_maps(p)
+        all_titles.append(t)
+        all_maps.append(m)
+
+    # -------- Find common metabolites --------
+    base_titles = all_titles[0]
+    common_titles = [t for t in base_titles if all(t in tt for tt in all_titles[1:])]
+
+    if not common_titles:
+        raise ValueError("Keine gemeinsamen Metabolit-Titel gefunden")
+
+    def idx_for(titles, subset):
+        return [titles.index(t) for t in subset]
+
+    maps_per_col = [
+        m[idx_for(t, common_titles), ...]
+        for t, m in zip(all_titles, all_maps)
+    ]
+
+    # -------- Plot --------
+    n = len(common_titles)
+    C = len(maps_per_col)
+
+    fig = plt.figure(figsize=(figsize_per_col * C + 1, n * 3))
+
+    gs = gridspec.GridSpec(
+        nrows=n, ncols=C + 1,
+        width_ratios=[1] * C + [0.05],
+        wspace=0.05, hspace=0.25
+    )
+
+    for i, title in enumerate(common_titles):
+        row_maps = [maps_per_col[c][i, slice_z, :, :] for c in range(C)]
+
+        valid = [m for m in row_maps if not np.isnan(m).all()]
+        if valid:
+            vals = np.concatenate([m[~np.isnan(m)] for m in valid])
+        else:
+            vals = np.array([0.0, 1.0])
+
+        vmin_row, vmax_row = np.percentile(vals, (low_pct, high_pct))
+
+        ims = []
+        for c, (m, lbl) in enumerate(zip(row_maps, col_titles)):
+            ax = fig.add_subplot(gs[i, c])
+            arr = np.nan_to_num(m, nan=0.0)
+
+            im = ax.imshow(
+                arr,
+                cmap='plasma',
+                origin='lower',
+                vmin=vmin_row,
+                vmax=vmax_row
+            )
+
+            ax.set_title(f"{title} — {lbl}", fontsize=9)
+            ax.axis('off')
+            ims.append(im)
+
+        cax = fig.add_subplot(gs[i, C])
+        cb = fig.colorbar(ims[0], cax=cax)
+        cax.set_title("LCM", fontsize=8)
+        cax.tick_params(labelsize=7)
+
+    plt.tight_layout()
     plt.show()

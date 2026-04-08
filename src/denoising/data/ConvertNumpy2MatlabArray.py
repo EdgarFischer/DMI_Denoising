@@ -1,19 +1,27 @@
 import numpy as np
 from scipy.io import savemat
-import os
+from pathlib import Path
 
 # working directory auf aktuelle Datei setzen
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+#base_path = Path(__file__).resolve().parent
 
-# Ordnernamen im datasets ordner mit data.npy dateien angeben die zu .mat konvertiert werden
+DATA_DIRECTORY = Path("/workspace/Denoising/datasets/Proton/B0corrected_wo_LipidMask")
 
-Ordner_Liste = ['sf_brain_DMI_HC_pilot_normalized']
+# automatisch alle Vol*-Ordner finden
+Ordner_Liste = [f for f in DATA_DIRECTORY.glob("Vol*") if f.is_dir()]
 
-DATA_DIRECTORY = "../datasets/"
+for folder in Ordner_Liste:
+    input_file = folder / "OriginalData/data_after_walinet.npy"
+    output_file = folder / "OriginalData/data_after_walinet.mat"
 
-for Ordner in Ordner_Liste:
+    if not input_file.exists():
+        print(f"Überspringe {folder}, keine data_after_walinet.npy gefunden")
+        continue
 
-    Data = np.load(DATA_DIRECTORY+Ordner+'/data.npy')
-    savemat(DATA_DIRECTORY+Ordner+'/data.mat', {'Data': Data})
+    print(f"Lade {input_file}")
+    Data = np.load(input_file)
+
+    savemat(output_file, {'Data': Data})
+    print(f"Gespeichert: {output_file}")
 
 print('fertig')
