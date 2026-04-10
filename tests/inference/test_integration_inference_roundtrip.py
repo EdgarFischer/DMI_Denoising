@@ -31,6 +31,8 @@ def make_cfg_infer(
     patch_sizes=None,
     patch_strides=None,
     weight_mode="average",
+    view_sampling_enabled=False,
+    view_sampling_views=None,
 ):
     return SimpleNamespace(
         data=SimpleNamespace(
@@ -38,6 +40,10 @@ def make_cfg_infer(
             channel_axis=channel_axis,
             fourier_axes=list(fourier_axes),
             normalization=normalization,
+            view_sampling=SimpleNamespace(
+                enabled=view_sampling_enabled,
+                views=[list(v) for v in view_sampling_views] if view_sampling_views is not None else [],
+            ),
         ),
         patching=SimpleNamespace(
             enabled=patching_enabled,
@@ -326,3 +332,176 @@ def test_infer_patch_identity_for_multiple_axis_configurations(
     assert patch_called["value"] is True
     np.testing.assert_allclose(y, x, rtol=1e-5, atol=1e-5)
     assert meta["output_shape"] == list(x.shape)
+
+def test_infer_multiview_stack_identity(
+    tmp_path,
+    dummy_ckpt,
+    patch_identity_model,
+):
+    """
+    Multi-view stack mode:
+    - output must have a leading view axis
+    - each view output must equal the original input for an identity model
+    """
+    x = make_complex_test_volume(shape=(5, 6, 7, 8, 9), seed=21)
+    input_path = tmp_path / "input_multiview_stack.npy"
+    np.save(input_path, x)
+
+    views = [
+        [0, 1, 3],
+        [0, 2, 3],
+        [1, 2, 3],
+    ]
+
+    cfg = make_cfg_infer(
+        image_axes=[0, 1, 3],
+        channel_axis=None,
+        fourier_axes=[3],
+        normalization=True,
+        patching_enabled=True,
+        patch_sizes=[4, 4, 5],
+        patch_strides=[2, 2, 3],
+        weight_mode="average",
+        view_sampling_enabled=True,
+        view_sampling_views=views,
+    )
+
+    y, meta = api.infer(
+        cfg=cfg,
+        ckpt_path=dummy_ckpt,
+        input_path=input_path,
+        batch_size=8,
+        device="cpu",
+        multi_view_mode="stack",
+    )
+
+    assert y.shape == (len(views),) + x.shape
+    assert meta["multi_view_mode"] == "stack"
+    assert meta["num_views"] == len(views)
+    assert meta["views"] == views
+
+    assert len(patch_identity_model) == 1
+    assert patch_identity_model[0].forward_calls > 0
+
+    for i in range(len(views)):
+        np.testing.assert_allclose(y[i], x, rtol=1e-5, atol=1e-5)
+
+
+def test_infer_multiview_average_identity(
+    tmp_path,
+    dummy_ckpt,
+    patch_identity_model,
+):
+    """
+    Multi-view average mode:
+    - output shape must match original input
+    - average over identical per-view outputs must equal original input
+    """
+    x = make_complex_test_volume(shape=(5, 6, 7, 8, 9), seed=22)
+    input_path = tmp_path / "input_multiview_average.npy"
+    np.save(input_path, x)
+
+    views = [
+        [0, 1, 3],
+        [0, 2, 3],
+        [1, 2, 3],
+    ]
+
+    cfg = make_cfg_infer(
+        image_axes=[0, 1, 3],
+        channel_axis=None,
+        fourier_axes=[3],
+        normalization=True,
+        patching_enabled=True,
+        patch_sizes=[4, 4, 5],
+        patch_strides=[2, 2, 3],
+        weight_mode="average",
+        view_sampling_enabled=True,
+        view_sampling_views=views,
+    )
+
+    y, meta = api.infer(
+        cfg=cfg,
+        ckpt_path=dummy_ckpt,
+        input_path=input_path,
+        batch_size=8,
+        device="cpu",
+        multi_view_mode="average",
+    )
+
+    assert y.shape == x.shape
+    assert meta["multi_view_mode"] == "average"
+    assert meta["num_views"] == len(views)
+    assert meta["views"] == views
+
+    assert len(patch_identity_model) == 1
+    assert patch_identity_model[0].forward_calls > 0
+
+    np.testing.assert_allclose(y, x, rtol=1e-5, atol=1e-5)
+
+
+def test_infer_multiview_identity_with_oversized_patch_axis(
+    tmp_path,
+    dummy_ckpt,
+    patch_identity_model,
+):
+    """
+    Multi-view identity with oversized patch size in one view.
+
+    Example idea:
+      input shape      : (64, 64, 35, 10, 2)
+      one view uses    : [0, 2, 3] -> effective shape includes axis of length 35
+      configured patch : [64, 64, None]
+    so one configured patch axis is larger than the effective view axis length
+    and must be clamped automatically.
+    """
+    x = make_complex_test_volume(shape=(64, 64, 35, 10, 2), seed=23)
+    input_path = tmp_path / "input_multiview_oversized_patch.npy"
+    np.save(input_path, x)
+
+    views = [
+        [0, 1, 3],
+        [0, 2, 3],  # here axis 2 has size 35, so patch size 64 is too large and must clamp
+        [1, 2, 3],
+    ]
+
+    cfg = make_cfg_infer(
+        image_axes=[0, 1, 3],
+        channel_axis=None,
+        fourier_axes=[],
+        normalization=False,
+        patching_enabled=True,
+        patch_sizes=[64, 64, None],
+        patch_strides=[32, 32, None],
+        weight_mode="average",
+        view_sampling_enabled=True,
+        view_sampling_views=views,
+    )
+
+    y_stack, meta_stack = api.infer(
+        cfg=cfg,
+        ckpt_path=dummy_ckpt,
+        input_path=input_path,
+        batch_size=4,
+        device="cpu",
+        multi_view_mode="stack",
+    )
+
+    assert y_stack.shape == (len(views),) + x.shape
+    assert meta_stack["multi_view_mode"] == "stack"
+
+    for i in range(len(views)):
+        np.testing.assert_allclose(y_stack[i], x, rtol=1e-5, atol=1e-5)
+
+    y_avg, meta_avg = api.infer(
+        cfg=cfg,
+        ckpt_path=dummy_ckpt,
+        input_path=input_path,
+        batch_size=4,
+        device="cpu",
+        multi_view_mode="average",
+    )
+
+    assert y_avg.shape == x.shape
+    assert meta_avg["multi_view_mode"] == "average"
+    np.testing.assert_allclose(y_avg, x, rtol=1e-5, atol=1e-5)

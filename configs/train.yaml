@@ -1,5 +1,5 @@
 run:
-  name: TEST #"Sim_Lesion_double_xyf-z_continued" # give your model a name
+  name: Proton_After_WALINET_2D_multiview_tMPPCA #"Sim_Lesion_double_xyf-z_continued" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model, diretory relative to project root
   gpu: "3" # check GPU availabiliy with nvidia-smi
   seed: 42
@@ -9,15 +9,17 @@ resume_ckpt: #"trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
 
 data:
   base_dir: "datasets/Proton/B0corrected_wo_LipidMask/" #path to your data folders, relative to project root
-  data_filename: "data_after_walinet.npy" # data_after_walinet.npy
-  train: ["Vol6_Brisbane/OriginalData"]
-  val:   ["Vol1_Brisbane/OriginalData"]
+  data_filename: "data_after_walinet_tMPPCA.npy" # data_after_walinet.npy
+  train: ["Vol6_Brisbane/OriginalData", "Vol3_Brisbane/OriginalData", "Vol4_Brisbane/OriginalData", "Vol5_Brisbane/OriginalData",
+          "Vol2_London/OriginalData", "Vol3_London/OriginalData", "Vol4_London/OriginalData", "Vol5_London/OriginalData",
+          "Vol6/OriginalData", "Vol7/OriginalData", "Vol8/OriginalData", "Vol9/OriginalData",]
+  val:   ["Vol1_Brisbane/OriginalData", "Vol1_London/OriginalData", "Vol5/OriginalData"]
 
   image_axes: [0, 1, 3]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition. 
   # important: This refers to GLOBAL axes, which means the axes positions in your original array as it is loaded 
   channel_axis: null     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum. Again GLOBAL axis
-  num_samples: 35   #10000  # how many voxels are chosen per epoch
+  num_samples: 140   #10000  # how many voxels are chosen per epoch
   val_samples: 1    #2000
   normalization: True   # data is automatically normalized
 
@@ -54,10 +56,10 @@ augmentation:
 
 patching: # Patching along network input axes, null = full axis, number = patch size along that axis
   enabled: true
-  patch_sizes: [64, 64, null] # with channel_axis C: [C, image_axes], else: [image_axes]
+  patch_sizes: [32, 32, null] # with channel_axis C: [C, image_axes], else: [image_axes]
 
 masking:
-  masked_axes: [0,1]    # local data axes to be masked (local explained above); can contain one axis (1D mask), two axes (2D mask), or 3 axes (3D). The mask is then replicated along the remaining dimensions.
+  masked_axes: [0, 1]    # local data axes to be masked (local explained above); can contain one axis (1D mask), two axes (2D mask), or 3 axes (3D). The mask is then replicated along the remaining dimensions.
   mask_fraction: 0.1    # fraction of pixels to mask in the 1D, 2D or 3D mask, e.g. 0.10 = 10%
   window_size: 3        # how big is the windows from which neighbors are drawn
 
@@ -69,11 +71,11 @@ optim:
   factor: 0.5         # learning rate is multiplied by factor after step_size epochs
   step_size: 50
   min_lr: 0.00002     # once this learning rate is reached, it is not further reduced
-  epochs: 1
+  epochs: 500
 
-  batch_size: 4 # 160 600 typically for 2D
+  batch_size: 16 # 160 600 typically for 2D
   num_workers: 0
 
 inference:
-  patch_strides: [32, 32, null] # with channel_axis C: [C, image_axes], else: [image_axes]
+  patch_strides: [32, 32, null] # with channel_axis C: [C, image_axes], else: [image_axes], 
   weight_mode: "hann"   # hann or average possible
