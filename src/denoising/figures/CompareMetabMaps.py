@@ -334,24 +334,30 @@ def plot_lcmodel_comparison(
     slice_z=17,
     low_pct=2,
     high_pct=98,
-    figsize_per_col=4
+    figsize_per_col=4,
+    save_path="lcmodel_comparison.pdf",
+    dpi=300
 ):
     """
     Plot comparison of LCModel maps across multiple .mat files.
+    Saves figure ALWAYS as PDF.
 
     Parameters
     ----------
     mat_paths : list of str
-        Paths to .mat files
     col_titles : list of str
-        Titles for each column (same length as mat_paths)
     slice_z : int
-        Z-slice to display
     low_pct, high_pct : float
-        Percentiles for contrast scaling
     figsize_per_col : float
-        Width per column in inches
+    save_path : str
+        Output filename (will be forced to .pdf)
+    dpi : int
     """
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+    import h5py
 
     assert len(mat_paths) == len(col_titles), "mat_paths und col_titles müssen gleich lang sein"
     if len(mat_paths) == 0:
@@ -436,4 +442,12 @@ def plot_lcmodel_comparison(
         cax.tick_params(labelsize=7)
 
     plt.tight_layout()
+
+    # -------- ALWAYS SAVE AS PDF --------
+    if not save_path.endswith(".pdf"):
+        save_path += ".pdf"
+
+    plt.savefig(save_path, dpi=dpi, bbox_inches='tight')
+    print(f"Figure gespeichert als PDF: {save_path}")
+
     plt.show()

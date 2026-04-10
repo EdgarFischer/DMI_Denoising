@@ -1,7 +1,7 @@
 run:
-  name: Proton_After_WALINET_3DMask #"Sim_Lesion_double_xyf-z_continued" # give your model a name
+  name: Proton_After_WALINET_xy_tMPPCA_test #"Sim_Lesion_double_xyf-z_continued" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model, diretory relative to project root
-  gpu: "1" # check GPU availabiliy with nvidia-smi
+  gpu: "0" # check GPU availabiliy with nvidia-smi
   seed: 42
 
 resume_training: True # load pretrained model exactly with optimizer state etc etc 
@@ -9,7 +9,7 @@ resume_ckpt: #"trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
 
 data:
   base_dir: "datasets/Proton/B0corrected_wo_LipidMask/" #path to your data folders, relative to project root
-  data_filename: "data_after_walinet.npy" # data_after_walinet.npy
+  data_filename: "data_after_walinet_tMPPCA.npy" # data_after_walinet.npy
   train: ["Vol6_Brisbane/OriginalData", "Vol3_Brisbane/OriginalData", "Vol4_Brisbane/OriginalData", "Vol5_Brisbane/OriginalData",
           "Vol2_London/OriginalData", "Vol3_London/OriginalData", "Vol4_London/OriginalData", "Vol5_London/OriginalData",
           "Vol6/OriginalData", "Vol7/OriginalData", "Vol8/OriginalData", "Vol9/OriginalData",]
@@ -19,7 +19,7 @@ data:
   channel_axis: null     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
   num_samples: 35   #10000  # how many voxels are chosen per epoch
-  val_samples: 7    #2000
+  val_samples: 1    #2000
 
   normalization: True   # data is automatically normalized
 
@@ -52,8 +52,8 @@ patching: # Patching along network input axes, null = full axis, number = patch 
   patch_sizes: [64, 64, null] # with channel_axis C: [C, image_axes], else: [image_axes]
 
 masking:
-  masked_axes: [0, 1, 3]    # global data axes to be masked; can contain one axis (1D mask, two axes (2D mask) or 3 axes (3D mask). The mask is then replicated along the remaining dimensions.
-  num_pixels: 344064       # careful: this means masked pixels in the 1D oder 2D mask; the mask is then replicated across the other dimensions
+  masked_axes: [0,1]    # global data axes to be masked; can contain one axis (1D mask) or two axes (2D mask). The mask is then replicated along the remaining dimensions.
+  num_pixels: 410       # careful: this means masked pixels in the 1D oder 2D mask; the mask is then replicated across the other dimensions
   window_size: 3      # how big is the windows from which neighbors are drawn
 
 model:
