@@ -13,13 +13,20 @@ data:
   train: ["Vol6_Brisbane/OriginalData"]
   val:   ["Vol1_Brisbane/OriginalData"]
 
-  image_axes: [0, 1, 3]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition
+  image_axes: [0, 1, 3]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition. 
+  # important: This refers to GLOBAL axes, which means the axes positions in your original array as it is loaded 
   channel_axis: null     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
-  fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum
+  fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum. Again GLOBAL axis
   num_samples: 35   #10000  # how many voxels are chosen per epoch
   val_samples: 1    #2000
-
   normalization: True   # data is automatically normalized
+
+  view_sampling: # this allows you to train the network with different input patches. For example xyf input, xzf, yzf randomly. If disabled only image_axes are used as defined above
+    enabled: true
+    views:
+      - [0, 1, 3]   # xyf GLOBAL axes! This refers to the axes in the original array as loaded
+      - [0, 2, 3]   # xzf
+      - [1, 2, 3]   # yzf
 
 augmentation:
   enabled: true
@@ -28,12 +35,12 @@ augmentation:
     enabled: true
     p: 1.0
     
-  permutation:  # randomly permute these global axes (if present in sample)
+  permutation:  # randomly permute these LOCAL axes (if present in sample), important. [0,1] for example means the first 2 axes of your patch, which may not be x,y, but z,f for example.
     enabled: true
     p: 1
     axes: [0, 1]
    
-  inversion: # random flips along these global axes
+  inversion: # random flips along these local axes
     enabled: true
     p: 1
     axes: [0, 1]
@@ -50,7 +57,7 @@ patching: # Patching along network input axes, null = full axis, number = patch 
   patch_sizes: [64, 64, null] # with channel_axis C: [C, image_axes], else: [image_axes]
 
 masking:
-  masked_axes: [0,1]    # global data axes to be masked; can contain one axis (1D mask), two axes (2D mask), or 3 axes (3D). The mask is then replicated along the remaining dimensions.
+  masked_axes: [0,1]    # local data axes to be masked (local explained above); can contain one axis (1D mask), two axes (2D mask), or 3 axes (3D). The mask is then replicated along the remaining dimensions.
   mask_fraction: 0.1    # fraction of pixels to mask in the 1D, 2D or 3D mask, e.g. 0.10 = 10%
   window_size: 3        # how big is the windows from which neighbors are drawn
 

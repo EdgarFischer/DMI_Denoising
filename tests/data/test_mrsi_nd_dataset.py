@@ -3,6 +3,7 @@ import pytest
 
 from denoising.data.mrsi_nd_dataset import MRSiNDataset
 
+
 def test_dataset_2d_without_channel_axis():
     data = (
         np.random.randn(2, 3, 4, 5, 6)
@@ -13,7 +14,7 @@ def test_dataset_2d_without_channel_axis():
         data=data,
         image_axes=(3, 4),
         channel_axis=None,
-        masked_axes=(4,),
+        masked_axes=(1,),   # local axis 1 -> second axis of the current input view
         num_samples=1,
         augmentation=None,
     )
@@ -23,6 +24,7 @@ def test_dataset_2d_without_channel_axis():
     assert tuple(inp.shape) == (2, 5, 6)
     assert tuple(tgt.shape) == (2, 5, 6)
     assert tuple(mask.shape) == (2, 5, 6)
+
 
 def test_dataset_2d_with_channel_axis_flattens_correctly():
     data = (
@@ -36,7 +38,7 @@ def test_dataset_2d_with_channel_axis_flattens_correctly():
         data=data,
         image_axes=(1, 4),
         channel_axis=3,
-        masked_axes=(4,),
+        masked_axes=(1,),   # local axis 1 -> second spatial axis of the current input view
         num_samples=1,
         augmentation=None,
     )
@@ -46,6 +48,7 @@ def test_dataset_2d_with_channel_axis_flattens_correctly():
     assert tuple(inp.shape) == (2 * 5, 3, 6)
     assert tuple(tgt.shape) == (2 * 5, 3, 6)
     assert tuple(mask.shape) == (2 * 5, 3, 6)
+
 
 class CaptureTransform:
     def __init__(self):
@@ -59,7 +62,7 @@ class CaptureTransform:
         return img.copy(), img.copy(), mask
 
 
-def test_dataset_maps_global_masked_axes_to_local_axes():
+def test_dataset_maps_local_masked_axes_to_structured_img_axes():
     data = (
         np.random.randn(2, 3, 4, 5, 6)
         + 1j * np.random.randn(2, 3, 4, 5, 6)
@@ -71,7 +74,7 @@ def test_dataset_maps_global_masked_axes_to_local_axes():
         data=data,
         image_axes=(1, 4),
         channel_axis=3,
-        masked_axes=(4,),
+        masked_axes=(1,),   # second axis within the current input view
         transform=tfm,
         num_samples=1,
         augmentation=None,
@@ -82,13 +85,14 @@ def test_dataset_maps_global_masked_axes_to_local_axes():
     # local structure with channel axis:
     # img shape = (2, C, *spatial) = (2, 5, 3, 6)
     # axis 0 = real/imag
-    # axis 1 = channel_axis(global 3)
-    # axis 2 = global axis 1
-    # axis 3 = global axis 4
+    # axis 1 = channel_axis
+    # axis 2 = first local spatial axis
+    # axis 3 = second local spatial axis
     assert tfm.last_img_shape == (2, 5, 3, 6)
     assert tfm.last_masked_axes_local == (3,)
 
-def test_dataset_maps_channel_axis_to_local_axis_1():
+
+def test_dataset_maps_first_local_axis_correctly_with_channel_axis():
     data = (
         np.random.randn(2, 3, 4, 5, 6)
         + 1j * np.random.randn(2, 3, 4, 5, 6)
@@ -100,7 +104,7 @@ def test_dataset_maps_channel_axis_to_local_axis_1():
         data=data,
         image_axes=(1, 4),
         channel_axis=3,
-        masked_axes=(3,),   # same as channel_axis
+        masked_axes=(0,),   # first axis within the current input view
         transform=tfm,
         num_samples=1,
         augmentation=None,
@@ -109,4 +113,4 @@ def test_dataset_maps_channel_axis_to_local_axis_1():
     _ = ds[0]
 
     assert tfm.last_img_shape == (2, 5, 3, 6)
-    assert tfm.last_masked_axes_local == (1,)
+    assert tfm.last_masked_axes_local == (2,)

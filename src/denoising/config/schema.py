@@ -9,6 +9,10 @@ class RunCfg:
     gpu: str
     seed: int
 
+@dataclass(frozen=True)
+class ViewSamplingCfg:
+    enabled: bool
+    views: Tuple[Tuple[int, ...], ...]
 
 @dataclass(frozen=True)
 class DataCfg:
@@ -22,6 +26,7 @@ class DataCfg:
     num_samples: int
     val_samples: int
     normalization: bool
+    view_sampling: Optional[ViewSamplingCfg] = None
 
 @dataclass(frozen=True)
 class GlobalPhaseAugCfg:

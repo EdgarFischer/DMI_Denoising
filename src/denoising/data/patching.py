@@ -1,6 +1,9 @@
 from typing import List, Tuple
 import numpy as np
 
+from typing import List, Tuple
+import numpy as np
+
 def get_random_patch_slices(img_shape, patch_sizes):
     """
     Build random valid slices for a network input tensor.
@@ -16,6 +19,7 @@ def get_random_patch_slices(img_shape, patch_sizes):
         Patch sizes for axes AFTER the real/imag axis, i.e. for img.shape[1:].
         - None means: use full axis
         - int N means: take a random patch of size N along that axis
+        - if N >= axis length: use full axis
 
     Returns
     -------
@@ -40,12 +44,7 @@ def get_random_patch_slices(img_shape, patch_sizes):
             if patch_size <= 0:
                 raise ValueError(f"Patch size must be positive or None, got {patch_size}.")
 
-            if patch_size > axis_len:
-                raise ValueError(
-                    f"Patch size {patch_size} is larger than axis length {axis_len}."
-                )
-
-            if patch_size == axis_len:
+            if patch_size >= axis_len:
                 slices.append(slice(None))
             else:
                 start = np.random.randint(0, axis_len - patch_size + 1)

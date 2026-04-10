@@ -2,6 +2,7 @@
 from .schema import (
     Config,
     RunCfg,
+    ViewSamplingCfg,
     DataCfg,
     GlobalPhaseAugCfg,
     PermutationAugCfg,
@@ -64,12 +65,42 @@ def validate_config(cfg: Config) -> None:
                 "augmentation.global_scale.min must be <= augmentation.global_scale.max."
             )
 
+    # --- view sampling ---
+    if cfg.data.view_sampling is not None and cfg.data.view_sampling.enabled:
+        if len(cfg.data.view_sampling.views) == 0:
+            raise ValueError("data.view_sampling.views must not be empty when view_sampling is enabled.")
+
+        for view in cfg.data.view_sampling.views:
+            if len(view) != len(cfg.data.image_axes):
+                raise ValueError(
+                    f"Each view in data.view_sampling.views must have length {len(cfg.data.image_axes)}, "
+                    f"but got view {view}."
+                )
+
+            if len(set(view)) != len(view):
+                raise ValueError(f"View {view} contains duplicate axes.")
+
+            if cfg.data.channel_axis is not None and cfg.data.channel_axis in view:
+                raise ValueError(
+                    f"View {view} must not contain channel_axis {cfg.data.channel_axis}."
+                )
+            
 def build_config(raw: dict) -> Config:
     # --- run ---
     run = RunCfg(**raw["run"])
 
     # --- data ---
     data_raw = raw["data"]
+    vs_raw = data_raw.get("view_sampling", None)
+    view_sampling = None
+    if vs_raw is not None:
+        view_sampling = ViewSamplingCfg(
+            enabled=bool(vs_raw.get("enabled", False)),
+            views=tuple(
+                tuple(int(ax) for ax in view)
+                for view in vs_raw.get("views", [])
+            ),
+        )
     data = DataCfg(
         base_dir=str(data_raw.get("base_dir", "")),
         data_filename=str(data_raw.get("data_filename", "data.npy")),
@@ -84,6 +115,7 @@ def build_config(raw: dict) -> Config:
         num_samples=int(data_raw["num_samples"]),
         val_samples=int(data_raw["val_samples"]),
         normalization=bool(data_raw.get("normalization", True)),
+        view_sampling=view_sampling,
     )
 
     # --- augmentation ---

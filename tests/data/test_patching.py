@@ -3,6 +3,7 @@ from denoising.data.patching import *
 import numpy as np
 import pytest
 
+
 def test_random_patch_shape():
     img = np.zeros((2, 16, 16, 64))
     patch_sizes = (5, 5, 32)
@@ -53,11 +54,14 @@ def test_raises_if_patch_sizes_length_is_wrong():
         get_random_patch_slices(img_shape, (5,))
 
 
-def test_raises_if_patch_too_large():
+def test_patch_too_large_uses_full_axis():
     img_shape = (2, 16, 16)
 
-    with pytest.raises(ValueError):
-        get_random_patch_slices(img_shape, (20, 5))
+    sl = get_random_patch_slices(img_shape, (20, 5))
+
+    assert sl[0] == slice(None)
+    assert sl[1] == slice(None)   # 20 > 16 -> use full axis
+    assert (sl[2].stop - sl[2].start) == 5
 
 
 def test_raises_if_patch_size_is_nonpositive():
@@ -68,6 +72,7 @@ def test_raises_if_patch_size_is_nonpositive():
 
     with pytest.raises(ValueError):
         get_random_patch_slices(img_shape, (-1, 5))
+
 
 def test_generate_inference_patches_full_coverage():
     arr = np.zeros((3, 22, 22, 21), dtype=np.float32)
@@ -136,6 +141,7 @@ def test_generate_inference_patches_none_means_full_axis():
     for p in patches:
         assert p.shape[0] == 5  # full first axis
 
+
 def test_patch_pipeline_identity_no_overlap():
     rng = np.random.default_rng(0)
     arr = rng.standard_normal((3, 16, 16, 16), dtype=np.float32)
@@ -156,6 +162,7 @@ def test_patch_pipeline_identity_no_overlap():
     )
 
     np.testing.assert_allclose(recon, arr, rtol=1e-6, atol=1e-6)
+
 
 def test_patch_pipeline_identity_with_overlap_average():
     rng = np.random.default_rng(1)
@@ -178,6 +185,7 @@ def test_patch_pipeline_identity_with_overlap_average():
 
     np.testing.assert_allclose(recon, arr, rtol=1e-6, atol=1e-6)
 
+
 def test_patch_pipeline_identity_with_overlap_hann():
     rng = np.random.default_rng(2)
     arr = rng.standard_normal((3, 22, 22, 21), dtype=np.float32)
@@ -199,6 +207,7 @@ def test_patch_pipeline_identity_with_overlap_hann():
 
     np.testing.assert_allclose(recon, arr, rtol=1e-5, atol=1e-5)
 
+
 def test_full_coverage():
     arr = np.zeros((3, 22, 22, 21), dtype=np.float32)
 
@@ -214,6 +223,7 @@ def test_full_coverage():
         coverage[slc] += 1
 
     assert coverage.min() >= 1
+
 
 def test_reconstruction_shape():
     rng = np.random.default_rng(3)
@@ -235,4 +245,3 @@ def test_reconstruction_shape():
     )
 
     assert recon.shape == arr.shape
-

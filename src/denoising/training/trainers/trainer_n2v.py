@@ -54,6 +54,7 @@ def prepare_dataset(
     normalization: bool,
     patching_enabled: bool,
     patch_sizes,
+    view_sampling=None,
 ):
     data = load_and_preprocess_data(
         folder_names=folders,
@@ -74,6 +75,7 @@ def prepare_dataset(
         augmentation=augmentation,
         patching_enabled=patching_enabled,
         patch_sizes=tuple(patch_sizes),
+        view_sampling=view_sampling,
     )
 
 
@@ -145,6 +147,7 @@ def train(
     channel_axis = cfg.data.channel_axis
     fourier_axes = cfg.data.fourier_axes
     masked_axes = cfg.mask.masked_axes
+    view_sampling = getattr(cfg.data, "view_sampling", None)
 
     num_samples = cfg.data.num_samples
     val_samples = cfg.data.val_samples
@@ -170,6 +173,7 @@ def train(
         normalization=do_norm,
         patching_enabled=patching_enabled,
         patch_sizes=patch_sizes,
+        view_sampling=view_sampling,
     )
 
     val_ds = prepare_dataset(
@@ -187,6 +191,7 @@ def train(
         normalization=do_norm,
         patching_enabled=patching_enabled,
         patch_sizes=patch_sizes,
+        view_sampling=view_sampling,
     )
 
     # ----- Device & dataloaders -----
