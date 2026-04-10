@@ -31,17 +31,26 @@ class StratifiedAxisMasking:
 
     def __init__(
         self,
-        num_masked_pixels: int = 8,
+        mask_fraction: float = 0.1,
         window_size: int = 3,
         random_mask_noisy: bool = False,
     ):
+        if not (0.0 < mask_fraction <= 1.0):
+            raise ValueError("mask_fraction must be in (0, 1].")
+
         if window_size % 2 != 1 or window_size < 3:
             raise ValueError("window_size must be odd and >= 3")
 
-        self.N = int(num_masked_pixels)
+        self.mask_fraction = float(mask_fraction)
         self.win = int(window_size)
         self.rad = self.win // 2
         self.random_mask_noisy = bool(random_mask_noisy)
+
+    def _compute_num_masked(self, shape_along_masked_axes):
+        total_pixels = int(np.prod(shape_along_masked_axes))
+        n = int(round(self.mask_fraction * total_pixels))
+        n = max(1, min(n, total_pixels))
+        return n
 
     @staticmethod
     def _sample_other_index_1d(i, size, rad):
@@ -97,30 +106,30 @@ class StratifiedAxisMasking:
         full_mask = np.broadcast_to(mask_view, full_shape).copy()
         return full_mask
 
-    def _make_stratified_coords_1d(self, size):
-        if self.N <= 0:
+    def _make_stratified_coords_1d(self, size, N):
+        if N <= 0:
             return []
 
-        tile = max(1, size // self.N)
+        tile = max(1, size // N)
         coords = []
 
         for start in range(0, size, tile):
-            if len(coords) >= self.N:
+            if len(coords) >= N:
                 break
             end = min(start + tile, size)
             coords.append(np.random.randint(start, end))
 
-        while len(coords) < self.N:
+        while len(coords) < N:
             coords.append(np.random.randint(0, size))
 
-        return coords[:self.N]
+        return coords[:N]
 
-    def _make_stratified_coords_2d(self, size0, size1):
-        if self.N <= 0:
+    def _make_stratified_coords_2d(self, size0, size1, N):
+        if N <= 0:
             return []
 
-        n_rows = max(1, int(np.sqrt(self.N * size0 / max(size1, 1))))
-        n_cols = int(np.ceil(self.N / n_rows))
+        n_rows = max(1, int(np.sqrt(N * size0 / max(size1, 1))))
+        n_cols = int(np.ceil(N / n_rows))
 
         tile_h = size0 / n_rows
         tile_w = size1 / n_cols
@@ -128,38 +137,38 @@ class StratifiedAxisMasking:
         coords = []
         for i in range(n_rows):
             for j in range(n_cols):
-                if len(coords) >= self.N:
+                if len(coords) >= N:
                     break
                 a0, a1 = int(i * tile_h), min(int((i + 1) * tile_h), size0)
                 b0, b1 = int(j * tile_w), min(int((j + 1) * tile_w), size1)
                 if a1 > a0 and b1 > b0:
                     coords.append((np.random.randint(a0, a1), np.random.randint(b0, b1)))
-            if len(coords) >= self.N:
+            if len(coords) >= N:
                 break
 
-        if len(coords) < self.N:
+        if len(coords) < N:
             all_coords = [(i, j) for i in range(size0) for j in range(size1)]
             np.random.shuffle(all_coords)
             for ij in all_coords:
-                if len(coords) >= self.N:
+                if len(coords) >= N:
                     break
                 if ij not in coords:
                     coords.append(ij)
 
-        return coords[:self.N]
+        return coords[:N]
 
-    def _make_stratified_coords_3d(self, size0, size1, size2):
-        if self.N <= 0:
+    def _make_stratified_coords_3d(self, size0, size1, size2, N):
+        if N <= 0:
             return []
 
         # Choose grid counts so that n0 * n1 * n2 ~ N
-        scale = (self.N / max(size0 * size1 * size2, 1)) ** (1 / 3)
+        scale = (N / max(size0 * size1 * size2, 1)) ** (1 / 3)
         n0 = max(1, int(round(size0 * scale)))
         n1 = max(1, int(round(size1 * scale)))
-        n2 = max(1, int(np.ceil(self.N / max(n0 * n1, 1))))
+        n2 = max(1, int(np.ceil(N / max(n0 * n1, 1))))
 
         # If product is still too small, grow n2 first, then n1, then n0
-        while n0 * n1 * n2 < self.N:
+        while n0 * n1 * n2 < N:
             if size2 >= size1 and size2 >= size0:
                 n2 += 1
             elif size1 >= size0:
@@ -175,7 +184,7 @@ class StratifiedAxisMasking:
         for i in range(n0):
             for j in range(n1):
                 for k in range(n2):
-                    if len(coords) >= self.N:
+                    if len(coords) >= N:
                         break
 
                     a0, a1 = int(i * tile0), min(int((i + 1) * tile0), size0)
@@ -188,23 +197,23 @@ class StratifiedAxisMasking:
                             np.random.randint(b0, b1),
                             np.random.randint(c0, c1),
                         ))
-                if len(coords) >= self.N:
+                if len(coords) >= N:
                     break
-            if len(coords) >= self.N:
+            if len(coords) >= N:
                 break
 
-        if len(coords) < self.N:
+        if len(coords) < N:
             all_coords = [(i, j, k) for i in range(size0) for j in range(size1) for k in range(size2)]
             np.random.shuffle(all_coords)
             used = set(coords)
             for ijk in all_coords:
-                if len(coords) >= self.N:
+                if len(coords) >= N:
                     break
                 if ijk not in used:
                     coords.append(ijk)
                     used.add(ijk)
 
-        return coords[:self.N]
+        return coords[:N]
 
     def __call__(self, img: np.ndarray, masked_axes_local):
         if img.ndim < 3:
@@ -237,7 +246,8 @@ class StratifiedAxisMasking:
             size = img.shape[ax]
 
             base_mask = np.zeros((size,), dtype=bool)
-            coords = self._make_stratified_coords_1d(size)
+            N = self._compute_num_masked((size,))
+            coords = self._make_stratified_coords_1d(size, N)
 
             for i in coords:
                 ii = self._sample_other_index_1d(i, size, self.rad)
@@ -288,7 +298,8 @@ class StratifiedAxisMasking:
             size1 = img.shape[ax1]
 
             base_mask = np.zeros((size0, size1), dtype=bool)
-            coords = self._make_stratified_coords_2d(size0, size1)
+            N = self._compute_num_masked((size0, size1))
+            coords = self._make_stratified_coords_2d(size0, size1, N)
 
             if self.random_mask_noisy:
                 mask = np.zeros(full_shape, dtype=bool)
@@ -334,7 +345,8 @@ class StratifiedAxisMasking:
         size2 = img.shape[ax2]
 
         base_mask = np.zeros((size0, size1, size2), dtype=bool)
-        coords = self._make_stratified_coords_3d(size0, size1, size2)
+        N = self._compute_num_masked((size0, size1, size2))
+        coords = self._make_stratified_coords_3d(size0, size1, size2, N)
 
         if self.random_mask_noisy:
             mask = np.zeros(full_shape, dtype=bool)

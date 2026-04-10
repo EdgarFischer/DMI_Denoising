@@ -67,7 +67,7 @@ def main(cfg, config_path: str | None = None):
     m = cfg.mask
     print(
         f"[mask] masked_axes={m.masked_axes} "
-        f"num_pixels={m.num_pixels} window_size={m.window_size}"
+        f"mask_fraction={m.mask_fraction} window_size={m.window_size}"
     )
 
     if len(m.masked_axes) not in (1, 2, 3):
@@ -76,11 +76,11 @@ def main(cfg, config_path: str | None = None):
         )
 
     transform_train = StratifiedAxisMasking(
-        num_masked_pixels=m.num_pixels,
+        mask_fraction=m.mask_fraction,
         window_size=m.window_size,
     )
     transform_val = StratifiedAxisMasking(
-        num_masked_pixels=m.num_pixels,
+        mask_fraction=m.mask_fraction,
         window_size=m.window_size,
     )
 

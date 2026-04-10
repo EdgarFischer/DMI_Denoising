@@ -32,7 +32,7 @@ def test_dataset_applies_augmentation_from_config_global_scale():
             "global_scale": {"enabled": True, "p": 1.0, "min": 2.0, "max": 2.0},
         },
         "patching": {"enabled": False, "patch_sizes": []},
-        "masking": {"masked_axes": [4], "num_pixels": 1, "window_size": 3},
+        "masking": {"masked_axes": [4], "mask_fraction": 1 / 6, "window_size": 3},
         "model": {"features": [8, 16]},
         "optim": {
             "lr": 1e-3,
@@ -109,7 +109,7 @@ def test_dataset_does_not_apply_augmentation_if_top_level_disabled():
             "global_scale": {"enabled": True, "p": 1.0, "min": 2.0, "max": 2.0},
         },
         "patching": {"enabled": False, "patch_sizes": []},
-        "masking": {"masked_axes": [4], "num_pixels": 1, "window_size": 3},
+        "masking": {"masked_axes": [4], "mask_fraction": 1 / 6, "window_size": 3},
         "model": {"features": [8, 16]},
         "optim": {
             "lr": 1e-3,

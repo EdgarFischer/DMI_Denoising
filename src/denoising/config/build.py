@@ -40,6 +40,10 @@ def validate_config(cfg: Config) -> None:
                 f"(image_axes + optional channel_axis), "
                 f"but got {len(cfg.inference.patch_strides)}."
             )
+    
+    # --- masking ---
+    if not (0.0 < cfg.mask.mask_fraction <= 1.0):
+        raise ValueError("mask.mask_fraction must be in (0, 1].")
 
     # --- augmentation ---
     if cfg.augmentation is not None:
@@ -129,7 +133,7 @@ def build_config(raw: dict) -> Config:
     mask_raw = raw["masking"]
     mask = MaskCfg(
         masked_axes=tuple(mask_raw["masked_axes"]),
-        num_pixels=int(mask_raw["num_pixels"]),
+        mask_fraction=float(mask_raw["mask_fraction"]),
         window_size=int(mask_raw["window_size"]),
     )
 

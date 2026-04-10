@@ -67,7 +67,7 @@ class PatchingCfg:
 @dataclass(frozen=True)
 class MaskCfg:
     masked_axes: Tuple[int, ...]   # global axes that will be masked, can be 1D oder 2D
-    num_pixels: int
+    mask_fraction: float
     window_size: int
 
 

@@ -9,7 +9,7 @@ def test_1d_mask_is_replicated_over_other_axes():
 
     img = np.random.randn(2, 5, 3, 6).astype(np.float32)
     tfm = StratifiedAxisMasking(
-        num_masked_pixels=2,
+        mask_fraction=2 / 6,  # 2 pixels along axis length 6
         window_size=3,
         random_mask_noisy=False,
     )
@@ -26,12 +26,13 @@ def test_1d_mask_is_replicated_over_other_axes():
             assert np.array_equal(mask[0, 0, 0, :], mask[0, c, h, :])
             assert np.array_equal(mask[0, 0, 0, :], mask[1, c, h, :])
 
+
 def test_1d_channel_mask_masks_full_channel():
     np.random.seed(1)
 
     img = np.random.randn(2, 5, 3, 6).astype(np.float32)
     tfm = StratifiedAxisMasking(
-        num_masked_pixels=1,
+        mask_fraction=1 / 5,  # 1 masked channel out of 5
         window_size=3,
         random_mask_noisy=False,
     )
@@ -52,12 +53,13 @@ def test_1d_channel_mask_masks_full_channel():
     for oc in other_channels:
         assert not np.any(mask[:, oc, :, :])
 
+
 def test_2d_mask_is_replicated_over_channels():
     np.random.seed(2)
 
     img = np.random.randn(2, 5, 4, 6).astype(np.float32)
     tfm = StratifiedAxisMasking(
-        num_masked_pixels=3,
+        mask_fraction=3 / (4 * 6),  # 3 masked positions in 2D grid
         window_size=3,
         random_mask_noisy=False,
     )
@@ -74,12 +76,13 @@ def test_2d_mask_is_replicated_over_channels():
         assert np.array_equal(ref, mask[0, ch])
         assert np.array_equal(ref, mask[1, ch])
 
+
 def test_random_mask_noisy_masks_only_one_realimag_channel():
     np.random.seed(3)
 
     img = np.random.randn(2, 5, 3, 6).astype(np.float32)
     tfm = StratifiedAxisMasking(
-        num_masked_pixels=2,
+        mask_fraction=2 / 6,  # ~2 masked positions along axis
         window_size=3,
         random_mask_noisy=True,
     )

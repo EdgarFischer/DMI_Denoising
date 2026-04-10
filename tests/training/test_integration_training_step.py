@@ -22,7 +22,7 @@ def test_training_step_runs_end_to_end_2d():
     ).astype(np.complex64)
 
     transform = StratifiedAxisMasking(
-        num_masked_pixels=4,
+        mask_fraction=4 / (6 * 5),   # was num_masked_pixels=4
         window_size=3,
         random_mask_noisy=False,
     )
