@@ -2,13 +2,12 @@ import numpy as np
 import torch
 import pytest
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import denoising.inference.api as api
 
 
-def make_cfg(image_axes, channel_axis=None, fourier_axes=(), normalization=False):
+def make_cfg_roundtrip(image_axes, channel_axis=None, fourier_axes=(), normalization=False):
     return SimpleNamespace(
         data=SimpleNamespace(
             image_axes=tuple(image_axes),
@@ -22,103 +21,7 @@ def make_cfg(image_axes, channel_axis=None, fourier_axes=(), normalization=False
     )
 
 
-def test_infer_identity_roundtrip_preserves_complex_volume_with_channel_axis(tmp_path, monkeypatch):
-    # --------------------------------------------------
-    # arrange
-    # Use a nontrivial axis setup to test permutation logic.
-    # arr shape = (4, 5, 3, 6, 2)
-    # --------------------------------------------------
-    rng = np.random.default_rng(0)
-    arr = (
-        rng.standard_normal((4, 5, 3, 6, 2))
-        + 1j * rng.standard_normal((4, 5, 3, 6, 2))
-    ).astype(np.complex64)
-
-    input_path = tmp_path / "input.npy"
-    np.save(input_path, arr)
-
-    ckpt_path = tmp_path / "dummy.ckpt"
-    ckpt_path.write_bytes(b"dummy")
-
-    cfg = make_cfg(
-        image_axes=(1, 3, 0),   # nontrivial order
-        channel_axis=2,         # also nontrivial
-        fourier_axes=(),
-        normalization=False,
-    )
-
-    class DummyUNet3D(torch.nn.Module):
-        def __init__(self, in_channels, out_channels, features):
-            super().__init__()
-
-        def to(self, device):
-            return self
-
-        def eval(self):
-            return self
-
-        def load_state_dict(self, state_dict, strict=True):
-            return
-
-        def forward(self, x):
-            return x
-
-    class DummyUNet2D:
-        def __init__(self, *args, **kwargs):
-            raise AssertionError("UNet2D should not be constructed in this test")
-
-    monkeypatch.setattr(api, "UNet2D", DummyUNet2D)
-    monkeypatch.setattr(api, "UNet3D", DummyUNet3D)
-    monkeypatch.setattr(api.torch, "load", lambda *args, **kwargs: {})
-
-    # --------------------------------------------------
-    # act
-    # --------------------------------------------------
-    y_out, meta = api.infer(
-        cfg=cfg,
-        ckpt_path=ckpt_path,
-        input_path=input_path,
-        batch_size=64,
-        device="cpu",
-    )
-
-    # --------------------------------------------------
-    # assert
-    # Identity model + no FFT + no normalization
-    # => output must exactly reconstruct the original complex volume
-    # --------------------------------------------------
-    assert y_out.shape == arr.shape
-    assert y_out.dtype == np.complex64
-    assert np.allclose(y_out, arr)
-
-    assert meta["spatial_dim"] == 3
-    assert meta["image_axes"] == [1, 3, 0]
-    assert meta["channel_axis"] == 2
-
-import numpy as np
-import torch
-import pytest
-
-from pathlib import Path
-from types import SimpleNamespace
-
-import denoising.inference.api as api
-
-
-class IdentityNet(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, features):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.features = features
-        self.forward_calls = 0
-
-    def forward(self, x):
-        self.forward_calls += 1
-        return x
-
-
-def make_cfg(
+def make_cfg_infer(
     *,
     image_axes,
     channel_axis,
@@ -148,6 +51,19 @@ def make_cfg(
             features=[8, 16],
         ),
     )
+
+
+class IdentityNet(torch.nn.Module):
+    def __init__(self, in_channels, out_channels, features):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.features = features
+        self.forward_calls = 0
+
+    def forward(self, x):
+        self.forward_calls += 1
+        return x
 
 
 def make_complex_test_volume(shape=(5, 6, 7, 8, 9), seed=0):
@@ -183,22 +99,87 @@ def patch_identity_model(monkeypatch):
     return created_models
 
 
+def test_infer_identity_roundtrip_preserves_complex_volume_with_channel_axis(tmp_path, monkeypatch):
+    """
+    Identity model + no FFT + no normalization
+    => output must reconstruct the original complex volume exactly.
+    """
+    rng = np.random.default_rng(0)
+    arr = (
+        rng.standard_normal((4, 5, 3, 6, 2))
+        + 1j * rng.standard_normal((4, 5, 3, 6, 2))
+    ).astype(np.complex64)
+
+    input_path = tmp_path / "input.npy"
+    np.save(input_path, arr)
+
+    ckpt_path = tmp_path / "dummy.ckpt"
+    ckpt_path.write_bytes(b"dummy")
+
+    cfg = make_cfg_roundtrip(
+        image_axes=(1, 3, 0),
+        channel_axis=2,
+        fourier_axes=(),
+        normalization=False,
+    )
+
+    class DummyUNet3D(torch.nn.Module):
+        def __init__(self, in_channels, out_channels, features):
+            super().__init__()
+
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return self
+
+        def load_state_dict(self, state_dict, strict=True):
+            return
+
+        def forward(self, x):
+            return x
+
+    class DummyUNet2D:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("UNet2D should not be constructed in this test")
+
+    monkeypatch.setattr(api, "UNet2D", DummyUNet2D)
+    monkeypatch.setattr(api, "UNet3D", DummyUNet3D)
+    monkeypatch.setattr(api.torch, "load", lambda *args, **kwargs: {})
+
+    y_out, meta = api.infer(
+        cfg=cfg,
+        ckpt_path=ckpt_path,
+        input_path=input_path,
+        batch_size=64,
+        device="cpu",
+    )
+
+    assert y_out.shape == arr.shape
+    assert y_out.dtype == np.complex64
+    assert np.allclose(y_out, arr)
+
+    assert meta["spatial_dim"] == 3
+    assert meta["image_axes"] == [1, 3, 0]
+    assert meta["channel_axis"] == 2
+
+
 def test_infer_full_volume_identity_and_branch(tmp_path, dummy_ckpt, monkeypatch, patch_identity_model):
     """
     Full-volume inference:
     - should NOT call patch inference helper
-    - should preserve the original complex input exactly (up to tolerance)
+    - should preserve the original complex input exactly
     """
     x = make_complex_test_volume(shape=(5, 6, 7, 8, 9), seed=1)
     input_path = tmp_path / "input.npy"
     np.save(input_path, x)
 
-    cfg = make_cfg(
-        image_axes=[0, 1, 2],   # 3D network over xyz
-        channel_axis=4,         # use T as channel
-        fourier_axes=[3],       # FFT over F
+    cfg = make_cfg_infer(
+        image_axes=[0, 1, 2],
+        channel_axis=4,
+        fourier_axes=[3],
         normalization=True,
-        patching_enabled=False, # force full-volume branch
+        patching_enabled=False,
         patch_sizes=None,
         patch_strides=None,
         weight_mode="average",
@@ -238,33 +219,21 @@ def test_infer_patch_identity_and_branch_xyz_plus_extra_axis(
 ):
     """
     Patch inference identity tests for:
-      - image_axes = [0,1,2] (three spatial axes)
-      - channel_axis = 3 or 4 (one arbitrary further axis)
-
-    This checks:
-      - patch branch is actually used
-      - full inference pipeline stays identity
+      - image_axes = [0,1,2]
+      - channel_axis = 3 or 4
     """
     x = make_complex_test_volume(shape=(5, 6, 7, 8, 9), seed=2 + channel_axis)
     input_path = tmp_path / f"input_ca{channel_axis}.npy"
     np.save(input_path, x)
 
-    # We patch ALL network-visible axes:
-    # [channel_axis, image_axes]
-    # image_axes = [0,1,2]
-    #
-    # Use values smaller than the full axis sizes so patching is real.
     if channel_axis == 3:
-        # shape along axes: X=5, Y=6, Z=7, F=8, T=9
-        # channel axis = F (size 8)
         patch_sizes = [4, 3, 4, 5]
         patch_strides = [2, 2, 2, 3]
     else:
-        # channel axis = T (size 9)
         patch_sizes = [4, 3, 4, 5]
         patch_strides = [2, 2, 2, 3]
 
-    cfg = make_cfg(
+    cfg = make_cfg_infer(
         image_axes=[0, 1, 2],
         channel_axis=channel_axis,
         fourier_axes=[3],
@@ -303,7 +272,7 @@ def test_infer_patch_identity_and_branch_xyz_plus_extra_axis(
 @pytest.mark.parametrize(
     "image_axes, channel_axis, patch_sizes, patch_strides",
     [
-        ([0, 1, 3], 2, [4, 3, 4, 5], [2, 2, 2, 3]),  # your typical xyf-z style
+        ([0, 1, 3], 2, [4, 3, 4, 5], [2, 2, 2, 3]),
         ([0, 2, 3], 1, [4, 3, 4, 5], [2, 2, 2, 3]),
         ([1, 2, 3], 0, [4, 3, 4, 5], [2, 2, 2, 3]),
     ],
@@ -326,7 +295,7 @@ def test_infer_patch_identity_for_multiple_axis_configurations(
     input_path = tmp_path / f"input_axes_{channel_axis}.npy"
     np.save(input_path, x)
 
-    cfg = make_cfg(
+    cfg = make_cfg_infer(
         image_axes=image_axes,
         channel_axis=channel_axis,
         fourier_axes=[3],

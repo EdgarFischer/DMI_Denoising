@@ -488,7 +488,7 @@ def _run_model_on_patches(
         for n in range(x_np.shape[0]):
             sample = x_np[n]  # (C, X, Y, Z) or (C, X, Y)
 
-            slices_list, patches = generate_inference_patches(
+            slices_list, patches, normalized_patch_sizes = generate_inference_patches(
                 arr=sample,
                 patch_sizes=inference_patch_sizes,
                 strides=inference_strides,
@@ -509,10 +509,7 @@ def _run_model_on_patches(
                 patches=pred_patches,
                 slices_list=slices_list,
                 output_shape=sample.shape,
-                patch_sizes=tuple(
-                    sample.shape[i] if p is None else int(p)
-                    for i, p in enumerate(inference_patch_sizes)
-                ),
+                patch_sizes=normalized_patch_sizes,
                 weight_mode=weight_mode,
             )
 
@@ -707,17 +704,6 @@ def _run_model_on_patches_structured(
         for n in range(x_np.shape[0]):
             sample = x_np[n]
 
-            # sample is either:
-            #   (2, *spatial)
-            # or
-            #   (2, C, *spatial)
-            #
-            # Config patch semantics:
-            #   without channel_axis: [image_axes]
-            #   with channel_axis   : [channel_axis, image_axes]
-            #
-            # But generate_inference_patches expects one entry per actual axis
-            # of `sample`, so we must prepend the real/imag axis here.
             expanded_patch_sizes = (sample.shape[0],) + tuple(
                 sample.shape[i + 1] if p is None else int(p)
                 for i, p in enumerate(inference_patch_sizes)
@@ -727,7 +713,7 @@ def _run_model_on_patches_structured(
                 for i, s in enumerate(inference_strides)
             )
 
-            slices_list, patches = generate_inference_patches(
+            slices_list, patches, normalized_patch_sizes = generate_inference_patches(
                 arr=sample,
                 patch_sizes=expanded_patch_sizes,
                 strides=expanded_strides,
@@ -747,13 +733,11 @@ def _run_model_on_patches_structured(
                     patch_struct_shapes.append(patch.shape)
 
                     if has_channel_axis:
-                        # (2, C, *spatial) -> (2*C, *spatial)
                         patch_model_in = patch.reshape(
                             patch.shape[0] * patch.shape[1],
                             *patch.shape[2:]
                         )
                     else:
-                        # (2, *spatial) -> unchanged
                         patch_model_in = patch
 
                     batch_model_in.append(patch_model_in)
@@ -766,7 +750,6 @@ def _run_model_on_patches_structured(
                     patch_shape = patch_struct_shapes[k]
 
                     if has_channel_axis:
-                        # (2*C, *spatial) -> (2, C, *spatial)
                         pred_patch = yb[k].reshape(patch_shape)
                     else:
                         pred_patch = yb[k]
@@ -777,7 +760,7 @@ def _run_model_on_patches_structured(
                 patches=pred_patches,
                 slices_list=slices_list,
                 output_shape=sample.shape,
-                patch_sizes=expanded_patch_sizes,
+                patch_sizes=normalized_patch_sizes,
                 weight_mode=weight_mode,
             )
 

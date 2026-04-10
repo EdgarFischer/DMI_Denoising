@@ -60,7 +60,7 @@ def test_patch_too_large_uses_full_axis():
     sl = get_random_patch_slices(img_shape, (20, 5))
 
     assert sl[0] == slice(None)
-    assert sl[1] == slice(None)   # 20 > 16 -> use full axis
+    assert sl[1] == slice(None)
     assert (sl[2].stop - sl[2].start) == 5
 
 
@@ -77,7 +77,7 @@ def test_raises_if_patch_size_is_nonpositive():
 def test_generate_inference_patches_full_coverage():
     arr = np.zeros((3, 22, 22, 21), dtype=np.float32)
 
-    slices_list, patches = generate_inference_patches(
+    slices_list, patches, _ = generate_inference_patches(
         arr,
         patch_sizes=(None, 8, 8, 8),
         strides=(None, 4, 4, 4),
@@ -88,14 +88,14 @@ def test_generate_inference_patches_full_coverage():
     for slc in slices_list:
         coverage[slc] += 1
 
-    assert coverage.min() >= 1, "Not all voxels are covered by at least one patch."
+    assert coverage.min() >= 1
     assert len(slices_list) == len(patches)
 
 
 def test_generate_inference_patches_reaches_array_end():
     arr = np.zeros((3, 22, 22, 21), dtype=np.float32)
 
-    slices_list, _ = generate_inference_patches(
+    slices_list, _, _ = generate_inference_patches(
         arr,
         patch_sizes=(None, 8, 8, 8),
         strides=(None, 4, 4, 4),
@@ -106,7 +106,6 @@ def test_generate_inference_patches_reaches_array_end():
     for slc in slices_list:
         coverage[slc] += 1
 
-    # especially important: last voxel on every axis must be covered
     assert np.all(coverage[:, -1, :, :] >= 1)
     assert np.all(coverage[:, :, -1, :] >= 1)
     assert np.all(coverage[:, :, :, -1] >= 1)
@@ -115,7 +114,7 @@ def test_generate_inference_patches_reaches_array_end():
 def test_generate_inference_patches_patch_shapes():
     arr = np.zeros((3, 22, 22, 21), dtype=np.float32)
 
-    _, patches = generate_inference_patches(
+    _, patches, _ = generate_inference_patches(
         arr,
         patch_sizes=(None, 8, 8, 8),
         strides=(None, 4, 4, 4),
@@ -130,7 +129,7 @@ def test_generate_inference_patches_patch_shapes():
 def test_generate_inference_patches_none_means_full_axis():
     arr = np.zeros((5, 10, 12), dtype=np.float32)
 
-    slices_list, patches = generate_inference_patches(
+    _, patches, _ = generate_inference_patches(
         arr,
         patch_sizes=(None, 4, 6),
         strides=(None, 2, 3),
@@ -139,17 +138,17 @@ def test_generate_inference_patches_none_means_full_axis():
 
     assert len(patches) > 0
     for p in patches:
-        assert p.shape[0] == 5  # full first axis
+        assert p.shape[0] == 5
 
 
 def test_patch_pipeline_identity_no_overlap():
     rng = np.random.default_rng(0)
     arr = rng.standard_normal((3, 16, 16, 16), dtype=np.float32)
 
-    slices_list, patches = generate_inference_patches(
+    slices_list, patches, norm_sizes = generate_inference_patches(
         arr,
         patch_sizes=(None, 8, 8, 8),
-        strides=(None, 8, 8, 8),  # kein overlap
+        strides=(None, 8, 8, 8),
         return_patches=True,
     )
 
@@ -157,7 +156,7 @@ def test_patch_pipeline_identity_no_overlap():
         patches=patches,
         slices_list=slices_list,
         output_shape=arr.shape,
-        patch_sizes=(3, 8, 8, 8),
+        patch_sizes=norm_sizes,
         weight_mode="average",
     )
 
@@ -168,29 +167,7 @@ def test_patch_pipeline_identity_with_overlap_average():
     rng = np.random.default_rng(1)
     arr = rng.standard_normal((3, 22, 22, 21), dtype=np.float32)
 
-    slices_list, patches = generate_inference_patches(
-        arr,
-        patch_sizes=(None, 8, 8, 8),
-        strides=(None, 4, 4, 4),  # overlap
-        return_patches=True,
-    )
-
-    recon = reconstruct_from_patches(
-        patches=patches,
-        slices_list=slices_list,
-        output_shape=arr.shape,
-        patch_sizes=(3, 8, 8, 8),
-        weight_mode="average",
-    )
-
-    np.testing.assert_allclose(recon, arr, rtol=1e-6, atol=1e-6)
-
-
-def test_patch_pipeline_identity_with_overlap_hann():
-    rng = np.random.default_rng(2)
-    arr = rng.standard_normal((3, 22, 22, 21), dtype=np.float32)
-
-    slices_list, patches = generate_inference_patches(
+    slices_list, patches, norm_sizes = generate_inference_patches(
         arr,
         patch_sizes=(None, 8, 8, 8),
         strides=(None, 4, 4, 4),
@@ -201,7 +178,29 @@ def test_patch_pipeline_identity_with_overlap_hann():
         patches=patches,
         slices_list=slices_list,
         output_shape=arr.shape,
-        patch_sizes=(3, 8, 8, 8),
+        patch_sizes=norm_sizes,
+        weight_mode="average",
+    )
+
+    np.testing.assert_allclose(recon, arr, rtol=1e-6, atol=1e-6)
+
+
+def test_patch_pipeline_identity_with_overlap_hann():
+    rng = np.random.default_rng(2)
+    arr = rng.standard_normal((3, 22, 22, 21), dtype=np.float32)
+
+    slices_list, patches, norm_sizes = generate_inference_patches(
+        arr,
+        patch_sizes=(None, 8, 8, 8),
+        strides=(None, 4, 4, 4),
+        return_patches=True,
+    )
+
+    recon = reconstruct_from_patches(
+        patches=patches,
+        slices_list=slices_list,
+        output_shape=arr.shape,
+        patch_sizes=norm_sizes,
         weight_mode="hann",
     )
 
@@ -211,7 +210,7 @@ def test_patch_pipeline_identity_with_overlap_hann():
 def test_full_coverage():
     arr = np.zeros((3, 22, 22, 21), dtype=np.float32)
 
-    slices_list, _ = generate_inference_patches(
+    slices_list, _, _ = generate_inference_patches(
         arr,
         patch_sizes=(None, 8, 8, 8),
         strides=(None, 4, 4, 4),
@@ -229,7 +228,7 @@ def test_reconstruction_shape():
     rng = np.random.default_rng(3)
     arr = rng.standard_normal((2, 11, 13, 7), dtype=np.float32)
 
-    slices_list, patches = generate_inference_patches(
+    slices_list, patches, norm_sizes = generate_inference_patches(
         arr,
         patch_sizes=(None, 5, 6, 4),
         strides=(None, 3, 4, 2),
@@ -240,7 +239,7 @@ def test_reconstruction_shape():
         patches=patches,
         slices_list=slices_list,
         output_shape=arr.shape,
-        patch_sizes=(2, 5, 6, 4),
+        patch_sizes=norm_sizes,
         weight_mode="average",
     )
 
