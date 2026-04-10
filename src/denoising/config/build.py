@@ -162,11 +162,12 @@ def build_config(raw: dict) -> Config:
     )
 
     # --- masking ---
-    mask_raw = raw["masking"]
+    mask_raw = raw.get("masking", {})
+
     mask = MaskCfg(
-        masked_axes=tuple(mask_raw["masked_axes"]),
-        mask_fraction=float(mask_raw["mask_fraction"]),
-        window_size=int(mask_raw["window_size"]),
+        masked_axes=tuple(mask_raw.get("masked_axes", [])),
+        mask_fraction=float(mask_raw.get("mask_fraction", 0.1)),
+        window_size=int(mask_raw.get("window_size", 1)),
     )
 
     # --- model ---
