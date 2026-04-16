@@ -10,8 +10,8 @@ DATA_DIRECTORY = Path("/workspace/Denoising/datasets/Proton/B0corrected_wo_Lipid
 Ordner_Liste = [f for f in DATA_DIRECTORY.glob("Vol*") if f.is_dir()]
 
 for Ordner in Ordner_Liste:
-    input_path = Ordner / 'OriginalData/data_after_walinet_tMPPCA.mat'
-    output_path = Ordner / 'OriginalData/data_after_walinet_tMPPCA.npy'
+    input_path = Ordner / 'OriginalData/data_after_walinet_tMPPCA_Anna.mat'
+    output_path = Ordner / 'OriginalData/data_after_walinet_tMPPCA_Anna.npy'
 
     print(f"Lade {input_path} ...")
     with h5py.File(input_path, 'r') as f:

@@ -2,6 +2,9 @@ import os
 import numpy as np
 from scipy.io import loadmat
 import logging 
+from pathlib import Path
+import numpy as np
+import SimpleITK as sitk
 
 def load_and_preprocess_data(
     folder_names: list,
@@ -208,6 +211,60 @@ def apply_low_rank_5d_to_dataset_list(dataset_list, rank):
         lowrank_list.append(reconstructed)
 
     return lowrank_list
+
+def load_sd_maps(folder): #mnc maps for now to be replaces with nii maps
+    """
+    Lädt alle *_sd_map.mnc Dateien aus einem Ordner in ein Dict.
+
+    Parameters
+    ----------
+    folder : str or Path
+        Ordner mit den SD/CRLB maps.
+
+    Returns
+    -------
+    sd_maps : dict
+        Dict der Form:
+        {
+            "Asp": np.ndarray,
+            "GABA": np.ndarray,
+            ...
+        }
+    """
+    folder = Path(folder)
+
+    if not folder.exists():
+        raise FileNotFoundError(f"Folder does not exist: {folder}")
+
+    files = sorted(folder.glob("*_sd_map.mnc"))
+
+    if not files:
+        raise FileNotFoundError(f"No *_sd_map.mnc files found in {folder}")
+
+    sd_maps = {}
+
+    for f in files:
+        metabolite = f.name.replace("_sd_map.mnc", "")
+        img = sitk.ReadImage(str(f))
+        arr = sitk.GetArrayFromImage(img)
+        sd_maps[metabolite] = arr
+
+    return sd_maps
+
+def load_and_align_t1_to_mask(mag_path, mask_path):
+    import nibabel as nib
+    from nibabel.processing import resample_from_to
+    import numpy as np
+
+    mag = resample_from_to(
+        nib.load(mag_path),
+        nib.load(mask_path),
+        order=1
+    ).get_fdata()
+
+    mag = np.swapaxes(mag, 0, 1)[::-1, ::-1, :]
+    return mag
+
 
 # def low_rank(data: np.ndarray, rank: int) -> np.ndarray:
 #     """
