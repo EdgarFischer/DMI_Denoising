@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WORKSPACE="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 CONTAINER_NAME="mrjo"
-IMAGE_NAME="deepdenoising"
+IMAGE_NAME="deep"
 
 REPO_NAME="$(basename "$REPO_ROOT")"
 REPO_IN_CONTAINER="/workspace/${REPO_NAME}"

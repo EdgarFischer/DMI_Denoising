@@ -22,6 +22,8 @@ RUN apt-get update && \
         liblapack-dev \
         libopenblas-dev \
         gfortran \
+        zoxide \
+        fzf \
         build-essential && \
     # bash-completion global aktivieren
     echo "if [ -f /etc/bash_completion ]; then . /etc/bash_completion; fi" >> /etc/bash.bashrc && \
@@ -34,6 +36,9 @@ RUN apt-get update && \
 
 # 4) Weiterarbeiten als nicht-root User
 USER hostuser
+
+# >>> EINZIGE NEUE ZEILE <<<
+RUN echo 'eval "$(zoxide init bash)"' >> ~/.bashrc
 
 # 5) Arbeitsverzeichnis im Container
 WORKDIR /workspace

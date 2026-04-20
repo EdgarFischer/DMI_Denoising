@@ -336,7 +336,10 @@ def plot_lcmodel_comparison(
     high_pct=98,
     figsize_per_col=4,
     save_path="lcmodel_comparison.pdf",
-    dpi=300
+    dpi=300,
+    mask=None,
+    ref_image=None,
+    ref_title="Ref"
 ):
     """
     Plot comparison of LCModel maps across multiple .mat files.
@@ -352,6 +355,12 @@ def plot_lcmodel_comparison(
     save_path : str
         Output filename (will be forced to .pdf)
     dpi : int
+    mask : np.ndarray or None
+        Optionale 3D-Maske mit Form (Z, Y, X).
+    ref_image : np.ndarray or None
+        Optionales 3D-Referenzbild (Z, Y, X)
+    ref_title : str
+        Titel für Referenzbild
     """
 
     import numpy as np
@@ -396,22 +405,59 @@ def plot_lcmodel_comparison(
         for t, m in zip(all_titles, all_maps)
     ]
 
+    # -------- Prepare mask --------
+    example_slice = maps_per_col[0][0, slice_z, :, :]
+
+    if mask is None:
+        mask = np.ones((maps_per_col[0].shape[1], example_slice.shape[0], example_slice.shape[1]), dtype=bool)
+    else:
+        mask = np.asarray(mask)
+        if mask.ndim != 3:
+            raise ValueError("mask muss 3D sein und Form (Z, Y, X) haben")
+        if mask.shape[0] <= slice_z:
+            raise ValueError(f"mask hat nur {mask.shape[0]} Slices, slice_z={slice_z} ist ungültig")
+        if mask.shape[1:] != example_slice.shape:
+            raise ValueError(
+                f"mask hat räumliche Form {mask.shape[1:]}, erwartet wird {example_slice.shape}"
+            )
+
+    mask_slice = mask[slice_z, :, :] > 0
+
+    # -------- Prepare ref image --------
+    has_ref = ref_image is not None
+    if has_ref:
+        ref_image = np.asarray(ref_image)
+        if ref_image.ndim != 3:
+            raise ValueError("ref_image muss 3D sein und Form (Z, Y, X) haben")
+        if ref_image.shape[0] <= slice_z:
+            raise ValueError(f"ref_image hat nur {ref_image.shape[0]} Slices, slice_z={slice_z} ist ungültig")
+        if ref_image.shape[1:] != example_slice.shape:
+            raise ValueError(
+                f"ref_image hat räumliche Form {ref_image.shape[1:]}, erwartet wird {example_slice.shape}"
+            )
+
     # -------- Plot --------
     n = len(common_titles)
     C = len(maps_per_col)
+    total_cols = C + (1 if has_ref else 0)
 
-    fig = plt.figure(figsize=(figsize_per_col * C + 1, n * 3))
+    fig = plt.figure(figsize=(figsize_per_col * total_cols + 1, n * 3))
 
     gs = gridspec.GridSpec(
-        nrows=n, ncols=C + 1,
-        width_ratios=[1] * C + [0.05],
+        nrows=n, ncols=total_cols + 1,
+        width_ratios=[1] * total_cols + [0.05],
         wspace=0.05, hspace=0.25
     )
 
     for i, title in enumerate(common_titles):
         row_maps = [maps_per_col[c][i, slice_z, :, :] for c in range(C)]
 
-        valid = [m for m in row_maps if not np.isnan(m).all()]
+        masked_row_maps = []
+        for m in row_maps:
+            masked = np.where(mask_slice, m, np.nan)
+            masked_row_maps.append(masked)
+
+        valid = [m for m in masked_row_maps if not np.isnan(m).all()]
         if valid:
             vals = np.concatenate([m[~np.isnan(m)] for m in valid])
         else:
@@ -420,8 +466,27 @@ def plot_lcmodel_comparison(
         vmin_row, vmax_row = np.percentile(vals, (low_pct, high_pct))
 
         ims = []
-        for c, (m, lbl) in enumerate(zip(row_maps, col_titles)):
-            ax = fig.add_subplot(gs[i, c])
+        col_offset = 0
+
+        # --- Ref column ---
+        if has_ref:
+            ax = fig.add_subplot(gs[i, 0])
+            ref_slice = np.where(mask_slice, ref_image[slice_z, :, :], np.nan)
+            ref_arr = np.nan_to_num(ref_slice, nan=0.0)
+
+            ax.imshow(
+                ref_arr,
+                cmap='gray',
+                origin='lower'
+            )
+            ax.set_title(ref_title, fontsize=9)
+            ax.axis('off')
+
+            col_offset = 1
+
+        # --- LCModel columns ---
+        for c, (m, lbl) in enumerate(zip(masked_row_maps, col_titles)):
+            ax = fig.add_subplot(gs[i, c + col_offset])
             arr = np.nan_to_num(m, nan=0.0)
 
             im = ax.imshow(
@@ -436,7 +501,8 @@ def plot_lcmodel_comparison(
             ax.axis('off')
             ims.append(im)
 
-        cax = fig.add_subplot(gs[i, C])
+        # --- Colorbar ---
+        cax = fig.add_subplot(gs[i, total_cols])
         cb = fig.colorbar(ims[0], cax=cax)
         cax.set_title("LCM", fontsize=8)
         cax.tick_params(labelsize=7)
