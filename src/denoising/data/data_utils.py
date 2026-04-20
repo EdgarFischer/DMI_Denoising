@@ -212,9 +212,10 @@ def apply_low_rank_5d_to_dataset_list(dataset_list, rank):
 
     return lowrank_list
 
-def load_sd_maps(folder): #mnc maps for now to be replaces with nii maps
+def load_sd_maps(folder):
     """
-    Lädt alle *_sd_map.mnc Dateien aus einem Ordner in ein Dict.
+    Lädt SD/CRLB maps aus einem Ordner.
+    Bevorzugt *_sd_map.mnc, fällt aber auf *_sd_map.nii.gz zurück.
 
     Parameters
     ----------
@@ -236,15 +237,26 @@ def load_sd_maps(folder): #mnc maps for now to be replaces with nii maps
     if not folder.exists():
         raise FileNotFoundError(f"Folder does not exist: {folder}")
 
-    files = sorted(folder.glob("*_sd_map.mnc"))
+    mnc_files = sorted(folder.glob("*_sd_map.mnc"))
+    nii_files = sorted(folder.glob("*_sd_map.nii.gz"))
 
-    if not files:
-        raise FileNotFoundError(f"No *_sd_map.mnc files found in {folder}")
+    if mnc_files:
+        files = mnc_files
+        suffix = "_sd_map.mnc"
+        print(f"Using .mnc files from {folder}")
+    elif nii_files:
+        files = nii_files
+        suffix = "_sd_map.nii.gz"
+        print(f"Using .nii.gz files from {folder}")
+    else:
+        raise FileNotFoundError(
+            f"No *_sd_map.mnc or *_sd_map.nii.gz files found in {folder}"
+        )
 
     sd_maps = {}
 
     for f in files:
-        metabolite = f.name.replace("_sd_map.mnc", "")
+        metabolite = f.name.replace(suffix, "")
         img = sitk.ReadImage(str(f))
         arr = sitk.GetArrayFromImage(img)
         sd_maps[metabolite] = arr
