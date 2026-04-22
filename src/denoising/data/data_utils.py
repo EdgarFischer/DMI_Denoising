@@ -277,6 +277,126 @@ def load_and_align_t1_to_mask(mag_path, mask_path):
     mag = np.swapaxes(mag, 0, 1)[::-1, ::-1, :]
     return mag
 
+def hamming_filter(arr, apply_dims, filter_width=100):
+    """
+    Apply an N‑D outer‑product Hamming filter along the specified axes.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Input k‑space array. Wird hier direkt im k‑space gefiltert!
+    apply_dims : sequence of int
+        Achsen, entlang derer der Filter angewendet wird.
+    filter_width : float, optional
+        Prozentualer Anteil des Filters (100 = voller Hamming‑Window,
+        50 = nur auf die äußeren 50 % angewendet).
+
+    Returns
+    -------
+    out : np.ndarray
+        Gefiltertes Array, gleiche Form wie `arr`.
+    """
+    out = arr.copy()
+    for dim in apply_dims:
+        n = arr.shape[dim]
+        # Länge des 1D‑Hamming‑Fensters
+        fw = int(np.ceil(filter_width/100 * n))
+        # Erzeuge das 1D‑Fenster
+        win = np.hamming(fw)
+        # Links/rechts mit Einsen auffüllen, damit die Mitte unberührt bleibt
+        pad_total = n - fw
+        pad_left = pad_total // 2
+        pad_right = pad_total - pad_left
+        full = np.concatenate([
+            np.ones(pad_left, dtype=win.dtype),
+            win,
+            np.ones(pad_right, dtype=win.dtype)
+        ])
+        # Für Broadcast auf die korrekte Dimension bringen
+        shape = [1] * arr.ndim
+        shape[dim] = n
+        full = full.reshape(shape)
+        # multiplikative Kombination (OuterProduct über alle dims)
+        out = out * full
+    return out
+
+def add_kspace_noise(
+    data,
+    noise_sigma,
+    save_path=None,
+    seed=None,
+    apply_hamming=False,
+    filter_width=100
+):
+    """
+    Add complex Gaussian noise in k-space and return noisy image-space data.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Input data (x, y, z, t, T) or similar.
+    noise_sigma : float
+        Standard deviation of complex Gaussian noise (in k-space).
+    save_path : str or Path, optional
+        If given, saves result as data.npy.
+    seed : int, optional
+        Random seed for reproducibility.
+    apply_hamming : bool
+        Whether to apply Hamming filter in k-space.
+    filter_width : int
+        Width for Hamming filter (only used if apply_hamming=True).
+
+    Returns
+    -------
+    noise_data : np.ndarray
+        Noisy data in image space (same shape as input).
+    """
+
+ #Explanation: For in vivo noise strenght Anna used a noise sigma of 11.72*10⁵, however, she rescaled her simulated data by multipliying it with
+# # 1.2*10⁴, then added noise with sigma 11.72*10⁵. I never adopted this rescaling and used the original scale. To get the same noise sigma in my scale I hence 
+# # have to use 11.72*10⁵/(1.2*10⁴)~ 97.666666
+
+    rng = np.random.default_rng(seed=10_000 + seed)
+
+    # --- normalization factor ---
+    MAX = np.abs(np.max(data))
+
+    # --- go to k-space ---
+    k_space = np.fft.fftshift(
+        np.fft.fftn(data, axes=(0, 1, 2)),
+        axes=(0, 1, 2)
+    )
+
+    # --- add complex Gaussian noise ---
+    noise = (
+        rng.standard_normal(k_space.shape)
+        + 1j * rng.standard_normal(k_space.shape)
+    ) * noise_sigma
+
+    k_space_noisy = k_space + noise
+
+    # --- optional Hamming filter ---
+    if apply_hamming:
+        k_space_noisy = hamming_filter(
+            k_space_noisy,
+            apply_dims=[0, 1, 2],
+            filter_width=filter_width
+        )
+
+    # --- back to image space ---
+    noise_data = np.fft.ifftn(
+        np.fft.ifftshift(k_space_noisy, axes=(0, 1, 2)),
+        axes=(0, 1, 2)
+    ) / MAX
+
+    # --- optional save ---
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
+        np.save(save_path / "data.npy", noise_data)
+
+    return noise_data
+
 
 # def low_rank(data: np.ndarray, rank: int) -> np.ndarray:
 #     """
