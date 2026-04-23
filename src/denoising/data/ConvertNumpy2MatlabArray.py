@@ -2,26 +2,25 @@ import numpy as np
 from scipy.io import savemat
 from pathlib import Path
 
-# working directory auf aktuelle Datei setzen
-#base_path = Path(__file__).resolve().parent
+for SNR in [3,5,7]:
 
-DATA_DIRECTORY = Path("/workspace/Denoising/datasets/Proton/B0corrected_wo_LipidMask")
+    DATA_DIRECTORY = Path(f"/workspace/Denoising/datasets/DMI/Simulations/SNRExperiments_double_radius/SNR{SNR}")
 
-# automatisch alle Vol*-Ordner finden
-Ordner_Liste = [f for f in DATA_DIRECTORY.glob("Vol*") if f.is_dir()]
+    # alle Noise_* Ordner finden
+    Ordner_Liste = [f for f in DATA_DIRECTORY.glob("Noise_*") if f.is_dir()]
 
-for folder in Ordner_Liste:
-    input_file = folder / "OriginalData/data_after_walinet.npy"
-    output_file = folder / "OriginalData/data_after_walinet.mat"
+    for folder in Ordner_Liste:
+        input_file = folder / "data.npy"
+        output_file = folder / "data.mat"
 
-    if not input_file.exists():
-        print(f"Überspringe {folder}, keine data_after_walinet.npy gefunden")
-        continue
+        if not input_file.exists():
+            print(f"Überspringe {folder}, keine data.npy gefunden")
+            continue
 
-    print(f"Lade {input_file}")
-    Data = np.load(input_file)
+        print(f"Lade {input_file}")
+        Data = np.load(input_file)
 
-    savemat(output_file, {'Data': Data})
-    print(f"Gespeichert: {output_file}")
+        savemat(output_file, {'Data': Data})
+        print(f"Gespeichert: {output_file}")
 
-print('fertig')
+    print("fertig")

@@ -393,9 +393,45 @@ def add_kspace_noise(
     if save_path is not None:
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
-        np.save(save_path / "data.npy", noise_data)
+        np.save(save_path/"data.npy", noise_data)
 
     return noise_data
+
+def apply_linewidth_broadening(data, delta_lw_hz, sw=476.0, save_path=None):
+    """
+    Apply uniform Lorentzian line broadening to a 5D array by multiplying
+    the FID dimension with exp(-pi * delta_lw_hz * t).
+
+    Assumes data shape: (x, y, z, t, T), i.e. FID axis = -2.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Input 5D complex-valued array.
+    delta_lw_hz : float
+        Additional linewidth broadening in Hz.
+    sw : float, default=476.0
+        Spectral bandwidth in Hz.
+    save_path : str or Path, optional
+        If given, saves the broadened array as .npy.
+
+    Returns
+    -------
+    data_broad : np.ndarray
+        Broadened data array with same shape as input.
+    """
+    dt = 1.0 / sw
+    t = np.arange(data.shape[-2]) * dt
+
+    broadening = np.exp(-np.pi * delta_lw_hz * t)  # shape: (Nt,)
+    data_broad = data * broadening[None, None, None, :, None]
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(save_path, data_broad)
+
+    return data_broad
 
 
 # def low_rank(data: np.ndarray, rank: int) -> np.ndarray:
