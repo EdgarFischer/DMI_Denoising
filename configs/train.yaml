@@ -1,5 +1,5 @@
 run:
-  name: SNR7 #"Sim_Lesion_double_xyf-z_continued" # give your model a name
+  name: SNR1 #"Sim_Lesion_double_xyf-z_continued" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model, diretory relative to project root
   gpu: "3" # check GPU availabiliy with nvidia-smi
   seed: 42
@@ -8,7 +8,7 @@ resume_training: True # load pretrained model exactly with optimizer state etc e
 resume_ckpt: #"trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
 
 data:
-  base_dir: "datasets/DMI/Simulations/SNRExperiments_double_radius/SNR7/" #path to your data folders, relative to project root
+  base_dir: "datasets/DMI/Simulations/SNRExperiments_double_radius/SNR1/" #path to your data folders, relative to project root
   data_filename: "data_tMPPCA.npy" # data_after_walinet.npy
   train: ['Noise_1', 'Noise_2', 'Noise_3', 'Noise_4', 'Noise_5']
   val:   ['Noise_6']

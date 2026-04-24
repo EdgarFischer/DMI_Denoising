@@ -3,7 +3,7 @@ import h5py
 import os
 from pathlib import Path
 
-for SNR in [3,5,7]:
+for SNR in [1]:
     # Arbeitsverzeichnis auf aktuelle Datei setzen
     DATA_DIRECTORY = Path(f"/workspace/Denoising/datasets/DMI/Simulations/SNRExperiments_double_radius/SNR{SNR}")
 

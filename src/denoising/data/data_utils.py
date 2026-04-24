@@ -433,6 +433,22 @@ def apply_linewidth_broadening(data, delta_lw_hz, sw=476.0, save_path=None):
 
     return data_broad
 
+def load_snr_data(base_dir, subjects, methods):
+    base_dir = Path(base_dir)
+    snr_data = {}
+
+    for subject in subjects:
+        snr_data[subject] = {}
+
+        for method in methods:
+            folder = f"{subject}_{method}"
+            file_name = f"SNR_{folder}.npy"
+            file_path = base_dir / folder / file_name
+
+            snr_data[subject][method] = np.load(file_path)
+
+    return snr_data
+
 
 # def low_rank(data: np.ndarray, rank: int) -> np.ndarray:
 #     """

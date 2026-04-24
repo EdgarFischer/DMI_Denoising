@@ -2,7 +2,7 @@ import numpy as np
 from scipy.io import savemat
 from pathlib import Path
 
-for SNR in [3,5,7]:
+for SNR in [1]:
 
     DATA_DIRECTORY = Path(f"/workspace/Denoising/datasets/DMI/Simulations/SNRExperiments_double_radius/SNR{SNR}")
 

@@ -294,3 +294,24 @@ def compute_subject_conc_abs_and_global_scale(
         scales.append(scale)
 
     return methods_subj, conc_m, conc_m_sd, scales
+
+def compute_subject_snr_values(snr_data, subjects, methods, mask_method="noisy"):
+    snr_subject_values = {method: [] for method in methods}
+
+    for subject in subjects:
+        snr_ref = snr_data[subject][mask_method]
+
+        # fixe 3D-Maske über alle Zeitpunkte
+        mask = np.all(snr_ref > 0, axis=3)
+
+        for method in methods:
+            snr = snr_data[subject][method]
+
+            valid = np.where(mask[..., None], snr, np.nan)
+
+            # ein Wert pro Subject
+            snr_value = np.nanmedian(valid)
+
+            snr_subject_values[method].append(snr_value)
+
+    return snr_subject_values
