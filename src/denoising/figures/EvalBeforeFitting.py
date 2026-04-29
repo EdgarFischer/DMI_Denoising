@@ -553,20 +553,29 @@ def interactive_spectra_viewer(
 
     return fig, (ax_img, ax_spec), z_slider
 
-def plot_real_imag_ft(data_5d, x, y, z, title=None, save_path=None):
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def plot_real_imag_ft(
+    data_5d,
+    x,
+    y,
+    z,
+    title=None,
+    save_path=None,
+    clip_percentiles=(1, 99),
+    cmap="gray",
+    mode="grayscale",   # "grayscale" oder "signed"
+    figsize=(2.2, 2.0),
+    dpi=300,
+):
     """
     Plot real and imaginary parts of one voxel's f x T spectrum.
 
-    Parameters
-    ----------
-    data_5d : np.ndarray
-        Complex array with shape (x, y, z, f, T).
-    x, y, z : int
-        Voxel coordinates.
-    title : str or None
-        Optional title above the figure.
-    save_path : str or None
-        Optional path, e.g. "panel.pdf".
+    mode:
+        "grayscale" -> helles Concept-Figure Mapping
+        "signed"    -> symmetrische Darstellung (für diverging colormaps)
     """
 
     voxel = data_5d[x, y, z, ...]  # (f, T)
@@ -575,21 +584,48 @@ def plot_real_imag_ft(data_5d, x, y, z, title=None, save_path=None):
     imag = np.imag(voxel).T
 
     data = np.concatenate([real.ravel(), imag.ravel()])
-    vmin = np.percentile(data, 1)
-    vmax = np.percentile(data, 99)
 
-    fig, ax = plt.subplots(2, 1, figsize=(2.2, 2.0), dpi=300, sharex=True)
+    fig, ax = plt.subplots(2, 1, figsize=figsize, dpi=dpi, sharex=True)
 
-    for a, img, label in zip(ax, [real, imag], ["Real part", "Imaginary part"]):
+    if mode == "grayscale":
+        # Helles Mapping für Concept Figure
+        p_low, p_high = np.percentile(data, clip_percentiles)
+
+        def preprocess(img):
+            img = np.clip(img, p_low, p_high)
+            img = (img - p_low) / (p_high - p_low + 1e-12)
+            return img
+
+        real_plot = preprocess(real)
+        imag_plot = preprocess(imag)
+
+        vmin, vmax = 0, 1
+
+    elif mode == "signed":
+        # Für diverging colormaps (z.B. RdGy_r)
+        vmax = np.percentile(np.abs(data), clip_percentiles[1])
+        vmin = -vmax
+
+        real_plot = real
+        imag_plot = imag
+
+    else:
+        raise ValueError("mode must be 'grayscale' or 'signed'")
+
+    for a, img, label in zip(ax, [real_plot, imag_plot], ["Real part", "Imaginary part"]):
         a.imshow(
             img,
-            cmap="gray",
+            cmap=cmap,
             vmin=vmin,
             vmax=vmax,
             origin="lower",
             aspect="auto",
             interpolation="nearest",
         )
+
+        # dynamische Textfarbe je nach cmap
+        text_color = "black" if mode == "grayscale" else "white"
+        box_color = "white" if mode == "grayscale" else "black"
 
         a.text(
             0.03, 0.88, label,
@@ -598,7 +634,8 @@ def plot_real_imag_ft(data_5d, x, y, z, title=None, save_path=None):
             fontweight="bold",
             ha="left",
             va="top",
-            color="black",
+            color=text_color,
+            bbox=dict(facecolor=box_color, alpha=0.5, edgecolor="none", pad=1.2),
         )
 
         a.set_xticks([])
@@ -607,19 +644,19 @@ def plot_real_imag_ft(data_5d, x, y, z, title=None, save_path=None):
         for spine in a.spines.values():
             spine.set_linewidth(0.6)
 
-    # gemeinsame Achsenlabels
     fig.text(0.02, 0.5, "Repetition", rotation=90,
              va="center", ha="center", fontsize=7)
     fig.text(0.5, 0.04, "Frequency",
              va="center", ha="center", fontsize=7)
 
-    # optionaler Titel
     if title is not None:
         fig.suptitle(title, fontsize=8, y=0.99)
+        top = 0.90
+    else:
+        top = 0.98
 
     plt.subplots_adjust(left=0.12, right=0.98,
-                        top=0.90 if title else 0.98,
-                        bottom=0.13, hspace=0.03)
+                        top=top, bottom=0.13, hspace=0.03)
 
     if save_path is not None:
         fig.savefig(save_path, bbox_inches="tight", pad_inches=0.02)
