@@ -143,11 +143,3 @@ class UNet2D(nn.Module):
             x_cur = x_cur + alpha * yi
 
         return x_cur
-
-
-
-
-
-
-
-

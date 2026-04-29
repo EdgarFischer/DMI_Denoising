@@ -552,3 +552,76 @@ def interactive_spectra_viewer(
     plt.show()
 
     return fig, (ax_img, ax_spec), z_slider
+
+def plot_real_imag_ft(data_5d, x, y, z, title=None, save_path=None):
+    """
+    Plot real and imaginary parts of one voxel's f x T spectrum.
+
+    Parameters
+    ----------
+    data_5d : np.ndarray
+        Complex array with shape (x, y, z, f, T).
+    x, y, z : int
+        Voxel coordinates.
+    title : str or None
+        Optional title above the figure.
+    save_path : str or None
+        Optional path, e.g. "panel.pdf".
+    """
+
+    voxel = data_5d[x, y, z, ...]  # (f, T)
+
+    real = np.real(voxel).T
+    imag = np.imag(voxel).T
+
+    data = np.concatenate([real.ravel(), imag.ravel()])
+    vmin = np.percentile(data, 1)
+    vmax = np.percentile(data, 99)
+
+    fig, ax = plt.subplots(2, 1, figsize=(2.2, 2.0), dpi=300, sharex=True)
+
+    for a, img, label in zip(ax, [real, imag], ["Real part", "Imaginary part"]):
+        a.imshow(
+            img,
+            cmap="gray",
+            vmin=vmin,
+            vmax=vmax,
+            origin="lower",
+            aspect="auto",
+            interpolation="nearest",
+        )
+
+        a.text(
+            0.03, 0.88, label,
+            transform=a.transAxes,
+            fontsize=6,
+            fontweight="bold",
+            ha="left",
+            va="top",
+            color="black",
+        )
+
+        a.set_xticks([])
+        a.set_yticks([])
+
+        for spine in a.spines.values():
+            spine.set_linewidth(0.6)
+
+    # gemeinsame Achsenlabels
+    fig.text(0.02, 0.5, "Repetition", rotation=90,
+             va="center", ha="center", fontsize=7)
+    fig.text(0.5, 0.04, "Frequency",
+             va="center", ha="center", fontsize=7)
+
+    # optionaler Titel
+    if title is not None:
+        fig.suptitle(title, fontsize=8, y=0.99)
+
+    plt.subplots_adjust(left=0.12, right=0.98,
+                        top=0.90 if title else 0.98,
+                        bottom=0.13, hspace=0.03)
+
+    if save_path is not None:
+        fig.savefig(save_path, bbox_inches="tight", pad_inches=0.02)
+
+    return fig, ax
