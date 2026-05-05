@@ -449,6 +449,34 @@ def load_snr_data(base_dir, subjects, methods):
 
     return snr_data
 
+def load_specmaps(folder, ppm_range=None, ppm_min=None, ppm_max=None):
+    """
+    ppm_range: tuple (start_ppm, end_ppm) z. B. (1, 6)
+    ppm_min/max: original ppm range der Daten
+    """
+
+    folder = Path(folder)
+    keys = ["LCMInput", "LCMFit", "LCMBaseline", "water", "Glc", "Glx", "Lac"]
+    data = {k: np.load(folder / f"{k}_spectra.npy") for k in keys}
+
+    # --- optional cropping ---
+    if ppm_range is not None:
+        N = data["LCMInput"].shape[3]
+
+        # original ppm Achse rekonstruieren
+        ppm_full = np.linspace(ppm_max, ppm_min, N)
+
+        # gewünschte range
+        mask = (ppm_full <= ppm_range[1]) & (ppm_full >= ppm_range[0])
+
+        # crop alle arrays
+        for k in keys:
+            data[k] = data[k][:, :, :, mask, :]
+
+        data["ppm"] = ppm_full[mask]
+
+    return data
+
 
 # def low_rank(data: np.ndarray, rank: int) -> np.ndarray:
 #     """

@@ -267,6 +267,89 @@ def load_nifti_ras(path, *, dtype=None, return_affine=False, return_transform=Fa
         outs.append(transform)
     return outs[0] if len(outs) == 1 else tuple(outs)
 
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def plot_lcmodel_figure(datasets, voxels, reps, titles, save_path=None):
+
+    fig, axs = plt.subplots(1, len(datasets), figsize=(14, 4), sharex=True)
+
+    for i, (data, voxel, rep, title) in enumerate(zip(datasets, voxels, reps, titles)):
+        ax = axs[i]
+        x, y, z = voxel
+
+        inp = data["LCMInput"][x, y, z, :, rep]
+        fit = data["LCMFit"][x, y, z, :, rep]
+
+        water = data["water"][x, y, z, :, rep]
+        glc = data["Glc"][x, y, z, :, rep]
+        glx = data["Glx"][x, y, z, :, rep]
+        lac = data["Lac"][x, y, z, :, rep]
+
+        residual = inp - fit
+        x_axis = np.arange(inp.shape[0])
+
+        # --- main spectrum ---
+        ax.plot(x_axis, inp, color="black", lw=1.5, label="Proposed")
+        ax.plot(x_axis, fit, color="red", lw=1.2, linestyle="--", label="LCModel fit")
+
+        # --- offsets ---
+        scale = np.max(np.abs(inp))
+        spacing = 0.35 * scale
+        offset = -spacing
+
+        res_off = offset
+        ax.plot(x_axis, residual + res_off, color="0.5", lw=0.7)
+        offset -= spacing
+
+        water_off = offset
+        ax.plot(x_axis, water + water_off, lw=1)
+        offset -= spacing
+
+        glc_off = offset
+        ax.plot(x_axis, glc + glc_off, lw=1)
+        offset -= spacing
+
+        glx_off = offset
+        ax.plot(x_axis, glx + glx_off, lw=1)
+        offset -= spacing
+
+        lac_off = offset
+        ax.plot(x_axis, lac + lac_off, lw=1)
+
+        # --- labels links ---
+        x_pos = x_axis[0] + 2
+
+        ax.text(x_pos, residual[0] + res_off, "Residual", fontsize=9, va="bottom")
+        ax.text(x_pos, water[0] + water_off, "HDO", fontsize=9, va="bottom")
+        ax.text(x_pos, glc[0] + glc_off, "Glc", fontsize=9, va="bottom")
+        ax.text(x_pos, glx[0] + glx_off, "Glx", fontsize=9, va="bottom")
+        ax.text(x_pos, lac[0] + lac_off, "Lac", fontsize=9, va="bottom")
+
+        # --- ppm Beschriftung (6 → 1) ---
+        N = len(x_axis)
+        ppm_ticks = [6, 5, 4, 3, 2, 1]
+        tick_positions = np.linspace(0, N - 1, len(ppm_ticks))
+
+        ax.set_xticks(tick_positions)
+        ax.set_xticklabels(ppm_ticks)
+        ax.set_xlabel("Chemical shift [ppm]")
+
+        # --- cosmetics ---
+        ax.legend(loc="upper right", fontsize=8, frameon=False)
+        ax.set_title(title)
+        ax.set_yticks([])              # y-Ticks entfernen
+        ax.grid(alpha=0.15)            # dezentes Grid
+
+    plt.tight_layout()
+
+    # --- optional speichern ---
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
+    plt.show()
+
 
 # Beispiel:
 # Tumor = load_nifti_ras("magnitudeTumor1.nii")
