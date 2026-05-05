@@ -273,7 +273,22 @@ import matplotlib.pyplot as plt
 
 def plot_lcmodel_figure(datasets, voxels, reps, titles, save_path=None):
 
-    fig, axs = plt.subplots(1, len(datasets), figsize=(14, 4), sharex=True)
+    plt.rcParams.update({
+        "font.size": 16,
+        "axes.titlesize": 18,
+        "axes.labelsize": 17,
+        "legend.fontsize": 14,
+        "xtick.labelsize": 15,
+    })
+
+    fig, axs = plt.subplots(
+        1, len(datasets),
+        figsize=(13.5, 4.2),
+        sharex=True
+    )
+
+    if len(datasets) == 1:
+        axs = [axs]
 
     for i, (data, voxel, rep, title) in enumerate(zip(datasets, voxels, reps, titles)):
         ax = axs[i]
@@ -290,61 +305,63 @@ def plot_lcmodel_figure(datasets, voxels, reps, titles, save_path=None):
         residual = inp - fit
         x_axis = np.arange(inp.shape[0])
 
-        # --- main spectrum ---
-        ax.plot(x_axis, inp, color="black", lw=1.5, label="Proposed")
-        ax.plot(x_axis, fit, color="red", lw=1.2, linestyle="--", label="LCModel fit")
+        ax.plot(x_axis, inp, color="black", lw=2.0, label="Proposed")
+        ax.plot(x_axis, fit, color="red", lw=1.6, linestyle="--", label="LCModel fit")
 
-        # --- offsets ---
         scale = np.max(np.abs(inp))
-        spacing = 0.35 * scale
+        spacing = 0.48 * scale
         offset = -spacing
 
         res_off = offset
-        ax.plot(x_axis, residual + res_off, color="0.5", lw=0.7)
+        ax.plot(x_axis, residual + res_off, color="0.5", lw=1.0)
         offset -= spacing
 
         water_off = offset
-        ax.plot(x_axis, water + water_off, lw=1)
+        ax.plot(x_axis, water + water_off, lw=1.3)
         offset -= spacing
 
         glc_off = offset
-        ax.plot(x_axis, glc + glc_off, lw=1)
+        ax.plot(x_axis, glc + glc_off, lw=1.3)
         offset -= spacing
 
         glx_off = offset
-        ax.plot(x_axis, glx + glx_off, lw=1)
+        ax.plot(x_axis, glx + glx_off, lw=1.3)
         offset -= spacing
 
         lac_off = offset
-        ax.plot(x_axis, lac + lac_off, lw=1)
+        ax.plot(x_axis, lac + lac_off, lw=1.3)
 
-        # --- labels links ---
-        x_pos = x_axis[0] + 2
+        label_fs = 14
+        x_left = x_axis[0] + 2
+        x_right = x_axis[-1] - 2
 
-        ax.text(x_pos, residual[0] + res_off, "Residual", fontsize=9, va="bottom")
-        ax.text(x_pos, water[0] + water_off, "HDO", fontsize=9, va="bottom")
-        ax.text(x_pos, glc[0] + glc_off, "Glc", fontsize=9, va="bottom")
-        ax.text(x_pos, glx[0] + glx_off, "Glx", fontsize=9, va="bottom")
-        ax.text(x_pos, lac[0] + lac_off, "Lac", fontsize=9, va="bottom")
+        ax.text(x_right, res_off, "Residual", fontsize=label_fs, va="bottom", ha="right")
+        ax.text(x_left, water_off, "HDO", fontsize=label_fs, va="bottom")
+        ax.text(x_left, glc_off, "Glc", fontsize=label_fs, va="bottom")
+        ax.text(x_left, glx_off, "Glx", fontsize=label_fs, va="bottom")
+        ax.text(x_left, lac_off, "Lac", fontsize=label_fs, va="bottom")
 
-        # --- ppm Beschriftung (6 → 1) ---
         N = len(x_axis)
         ppm_ticks = [6, 5, 4, 3, 2, 1]
         tick_positions = np.linspace(0, N - 1, len(ppm_ticks))
 
         ax.set_xticks(tick_positions)
         ax.set_xticklabels(ppm_ticks)
-        ax.set_xlabel("Chemical shift [ppm]")
+        ax.set_xlabel("Chemical shift [ppm]", fontsize=16)
 
-        # --- cosmetics ---
-        ax.legend(loc="upper right", fontsize=8, frameon=False)
-        ax.set_title(title)
-        ax.set_yticks([])              # y-Ticks entfernen
-        ax.grid(alpha=0.15)            # dezentes Grid
+        ax.set_title(title, fontsize=18, pad=6)
+        ax.set_yticks([])
+        ax.grid(False)
 
-    plt.tight_layout()
+        ymin = lac_off - 0.35 * scale
+        ymax = 1.25 * np.max(inp)
+        ax.set_ylim(ymin, ymax)
 
-    # --- optional speichern ---
+        if i == 0:
+            ax.legend(loc="upper right", fontsize=13, frameon=False)
+
+    plt.subplots_adjust(wspace=0.18)
+
     if save_path is not None:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
