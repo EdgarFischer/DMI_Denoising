@@ -65,6 +65,10 @@ def plot_rrmse_2x2(
     legend_handles = []
     for lab in rep_methods.keys():
         st = method_style.get(lab, {})
+
+        if st.get("label") == "_nolegend_":
+            continue
+
         legend_handles.append(
             Line2D(
                 [0], [0],

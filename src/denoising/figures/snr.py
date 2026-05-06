@@ -11,7 +11,7 @@ def plot_snr_boxplot(snr_subject_values, methods, labels=None, save_path=None):
     if labels is None:
         labels = methods
 
-    plt.figure(figsize=(6, 5))
+    plt.figure(figsize=(7, 4.8))
 
     plt.boxplot(
         data,
@@ -23,12 +23,17 @@ def plot_snr_boxplot(snr_subject_values, methods, labels=None, save_path=None):
         capprops=dict(linewidth=1.5),
     )
 
-    plt.ylabel("LCModel-reported SNR")
-    plt.title("LCModel-reported SNR across subjects")
-    plt.grid(True, axis="y", alpha=0.3)
-    plt.tight_layout()
+    plt.ylabel("LCModel-reported SNR", fontsize=18)
 
-    # 👉 Speichern (optional)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
+
+    plt.ylim(0, 30)
+
+    plt.grid(True, axis="y", alpha=0.3)
+
+    plt.tight_layout(pad=0.5)
+
     if save_path is not None:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
