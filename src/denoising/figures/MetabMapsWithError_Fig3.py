@@ -5,67 +5,148 @@ from matplotlib import colors
 
 def plot_sim_maps_with_per_column_cbars(
     maps,
-    errs,
+    errs=None,
     *,
     t_idx: int,
     z_idx: int,
     methods=("GT", "Proposed", "tMPPCA", "No denoising"),
-    metabolites=("Glx", "Lac"),
+    metabolites=("Glc", "Glx", "Lac"),
     cmap_map="magma",
     cmap_err="RdBu_r",
     title=None,
-    amp_cbar_labels=("Glx [a.u.]", "Lac [a.u.]"),
-    err_cbar_labels=("Glx error [a.u.]", "Lac error [a.u.]"),
-    err_abs_percentile=99.9,   # <-- percentile of |error|
-    # layout controls
+    amp_cbar_labels=None,
+    err_cbar_labels=None,
+    err_abs_percentile=95,
+    normalize_to_hdo=False,
+    hdo_name="HDO",
+    eps=1e-8,
     figsize=None,
     gap=0.06,
-    wspace=0.06,
+    wspace=0.055,
     hspace=0.02,
-    cbar_height=0.035,
-    cbar_pad=0.008,
+    cbar_height=0.030,
+    cbar_pad=0.007,
     save_path="simulationMaps.pdf",
     show=True,
 ):
-    """
-    Error scaling is based on a percentile of |error| pooled across methods.
-    v = percentile(|error|, err_abs_percentile)
-    error limits are set to (-v, +v)
-    """
 
     def slc4(A):
         return A[:, :, z_idx, t_idx]
 
+    metabolites = tuple(metabolites)
+    n_metab = len(metabolites)
+
+    if amp_cbar_labels is None:
+        if normalize_to_hdo:
+            amp_cbar_labels = tuple([f"{m} / HDO" for m in metabolites])
+        else:
+            amp_cbar_labels = tuple([f"{m} [a.u.]" for m in metabolites])
+
+    if err_cbar_labels is None:
+        if normalize_to_hdo:
+            err_cbar_labels = tuple([f"{m} / HDO error" for m in metabolites])
+        else:
+            err_cbar_labels = tuple([f"{m} error [a.u.]" for m in metabolites])
+
     # -------------------------------------------------
-    # Amplitude scaling (unchanged: GT-based)
+    # Optional HDO normalization
+    # -------------------------------------------------
+    maps_plot = {}
+
+    for meth in methods:
+
+        maps_plot[meth] = {}
+
+        if normalize_to_hdo:
+            hdo = maps[meth][hdo_name]
+
+        for m in metabolites:
+
+            if normalize_to_hdo:
+
+                valid = hdo > 0
+
+                tmp = np.zeros_like(maps[meth][m], dtype=float)
+
+                tmp[valid] = (
+                    maps[meth][m][valid]
+                    / hdo[valid]
+                )
+
+                maps_plot[meth][m] = tmp
+
+            else:
+                maps_plot[meth][m] = maps[meth][m]
+
+    # -------------------------------------------------
+    # Error maps
+    # -------------------------------------------------
+    err_maps_plot = {}
+
+    for meth in methods:
+
+        err_maps_plot[meth] = {}
+
+        for m in metabolites:
+
+            if meth == "GT":
+                err_maps_plot[meth][m] = None
+                continue
+
+            if normalize_to_hdo:
+
+                err_maps_plot[meth][m] = (
+                    maps_plot[meth][m]
+                    - maps_plot["GT"][m]
+                )
+
+            else:
+
+                if errs is None:
+                    raise ValueError(
+                        "errs must be provided when normalize_to_hdo=False"
+                    )
+
+                err_maps_plot[meth][m] = errs.get(meth, {}).get(m, None)
+
+    # -------------------------------------------------
+    # Amplitude scaling
     # -------------------------------------------------
     amp_norm = {}
+
     for m in metabolites:
-        gt_t = maps["GT"][m][:, :, :, t_idx]
+
+        gt_t = maps_plot["GT"][m][:, :, :, t_idx]
         gt_vals = gt_t[np.isfinite(gt_t)]
 
         if gt_vals.size == 0:
             vmin, vmax = 0.0, 1.0
+
         else:
             vmin = np.percentile(gt_vals, 2)
             vmax = np.percentile(gt_vals, 99.5)
+
             if vmax <= vmin:
                 vmax = vmin + 1e-6
 
         amp_norm[m] = colors.Normalize(vmin=vmin, vmax=vmax)
 
     # -------------------------------------------------
-    # NEW: Error scaling via percentile of |error|
+    # Error scaling
     # -------------------------------------------------
     err_lim = {}
+
     for m in metabolites:
+
         abs_vals = []
 
         for meth in methods:
+
             if meth == "GT":
                 continue
 
-            Em = errs.get(meth, {}).get(m, None)
+            Em = err_maps_plot[meth][m]
+
             if Em is None:
                 continue
 
@@ -76,89 +157,123 @@ def plot_sim_maps_with_per_column_cbars(
                 abs_vals.append(np.abs(Em_t))
 
         if len(abs_vals) == 0:
+
             err_lim[m] = (-1.0, 1.0)
-            continue
 
-        all_abs = np.concatenate(abs_vals, axis=0)
-        v = np.percentile(all_abs, err_abs_percentile)
+        else:
 
-        if v == 0:
-            v = 1e-6
+            v = np.percentile(
+                np.concatenate(abs_vals),
+                err_abs_percentile
+            )
 
-        err_lim[m] = (-v, +v)
+            if v == 0:
+                v = 1e-6
+
+            err_lim[m] = (-v, +v)
 
     # -------------------------------------------------
-    # Figure layout
+    # Layout
     # -------------------------------------------------
     nrows = len(methods)
+
     if figsize is None:
-        figsize = (8.8, 1.6 * nrows + 0.9)
+        figsize = (10.8, 1.55 * nrows + 0.85)
 
     fig = plt.figure(figsize=figsize)
 
+    width_ratios = [1] * n_metab + [gap] + [1] * n_metab
+    gap_col = n_metab
+
     gs = fig.add_gridspec(
         nrows=nrows,
-        ncols=5,
-        width_ratios=[1, 1, gap, 1, 1],
+        ncols=2 * n_metab + 1,
+        width_ratios=width_ratios,
         wspace=wspace,
-        hspace=hspace
+        hspace=hspace,
     )
 
-    col_titles = [
-        metabolites[0], metabolites[1], "",
-        f"{metabolites[0]} error", f"{metabolites[1]} error"
-    ]
-
     bottom_axes = {}
-    mappable_amp = {metabolites[0]: None, metabolites[1]: None}
-    mappable_err = {metabolites[0]: None, metabolites[1]: None}
+
+    mappable_amp = {m: None for m in metabolites}
+    mappable_err = {m: None for m in metabolites}
 
     for r, meth in enumerate(methods):
 
-        # ----- amplitude columns -----
+        # -----------------------------------------
+        # Amplitude columns
+        # -----------------------------------------
         for c, m in enumerate(metabolites):
-            ax = fig.add_subplot(gs[r, c])
-            A = slc4(maps[meth][m])
 
-            im = ax.imshow(A.T, origin="lower",
-                           cmap=cmap_map, norm=amp_norm[m])
+            ax = fig.add_subplot(gs[r, c])
+
+            A = slc4(maps_plot[meth][m])
+
+            im = ax.imshow(
+                A.T,
+                origin="lower",
+                cmap=cmap_map,
+                norm=amp_norm[m],
+            )
 
             if mappable_amp[m] is None:
                 mappable_amp[m] = im
 
             if r == 0:
-                ax.set_title(col_titles[c], pad=6)
+
+                if normalize_to_hdo:
+                    ax.set_title(f"{m} / HDO", pad=6, fontsize=11)
+                else:
+                    ax.set_title(m, pad=6, fontsize=11)
 
             if c == 0:
-                ax.set_ylabel(meth, rotation=90,
-                              fontsize=11, labelpad=12)
+                ax.set_ylabel(
+                    meth,
+                    rotation=90,
+                    fontsize=11,
+                    labelpad=12
+                )
 
             ax.set_xticks([])
             ax.set_yticks([])
+
             for s in ax.spines.values():
                 s.set_visible(False)
 
             if r == nrows - 1:
                 bottom_axes[("amp", m)] = ax
 
-        # gap column
-        fig.add_subplot(gs[r, 2]).axis("off")
+        # gap
+        fig.add_subplot(gs[r, gap_col]).axis("off")
 
-        # ----- error columns -----
+        # -----------------------------------------
+        # Error columns
+        # -----------------------------------------
         for c, m in enumerate(metabolites):
-            ax = fig.add_subplot(gs[r, c + 3])
+
+            ax = fig.add_subplot(gs[r, gap_col + 1 + c])
 
             if r == 0:
-                ax.set_title(col_titles[c + 3], pad=6)
 
-            Em = errs.get(meth, {}).get(m, None)
+                if normalize_to_hdo:
+                    ax.set_title(
+                        f"{m} / HDO error",
+                        pad=6,
+                        fontsize=11
+                    )
+                else:
+                    ax.set_title(
+                        f"{m} error",
+                        pad=6,
+                        fontsize=11
+                    )
 
-            if meth == "GT" or Em is None:
-                ax.text(0.5, 0.5, "",
-                        ha="center", va="center",
-                        transform=ax.transAxes)
-            else:
+            Em = err_maps_plot[meth][m]
+
+            if Em is not None:
+
                 E = slc4(Em)
+
                 imE = ax.imshow(
                     E.T,
                     origin="lower",
@@ -172,47 +287,54 @@ def plot_sim_maps_with_per_column_cbars(
 
             ax.set_xticks([])
             ax.set_yticks([])
+
             for s in ax.spines.values():
                 s.set_visible(False)
 
             if r == nrows - 1:
                 bottom_axes[("err", m)] = ax
 
-    if title is not None:
-        fig.text(0.02, 0.98, title,
-                 ha="left", va="top", fontsize=13)
-
     # -------------------------------------------------
     # Colorbars
     # -------------------------------------------------
     def add_cbar_under(ax_ref, mappable, label):
+
+        if mappable is None:
+            return
+
         bbox = ax_ref.get_position()
+
         cax = fig.add_axes([
             bbox.x0,
             bbox.y0 - cbar_pad - cbar_height,
             bbox.width,
-            cbar_height
+            cbar_height,
         ])
-        cb = fig.colorbar(mappable, cax=cax,
-                          orientation="horizontal")
-        cb.set_label(label, fontsize=9)
-        cb.ax.tick_params(labelsize=8)
 
-    add_cbar_under(bottom_axes[("amp", metabolites[0])],
-                   mappable_amp[metabolites[0]],
-                   amp_cbar_labels[0])
+        cb = fig.colorbar(
+            mappable,
+            cax=cax,
+            orientation="horizontal"
+        )
 
-    add_cbar_under(bottom_axes[("amp", metabolites[1])],
-                   mappable_amp[metabolites[1]],
-                   amp_cbar_labels[1])
+        cb.set_label(label, fontsize=8.5)
+        cb.ax.tick_params(labelsize=7.5)
 
-    add_cbar_under(bottom_axes[("err", metabolites[0])],
-                   mappable_err[metabolites[0]],
-                   err_cbar_labels[0])
+    for i, m in enumerate(metabolites):
 
-    add_cbar_under(bottom_axes[("err", metabolites[1])],
-                   mappable_err[metabolites[1]],
-                   err_cbar_labels[1])
+        add_cbar_under(
+            bottom_axes[("amp", m)],
+            mappable_amp[m],
+            amp_cbar_labels[i],
+        )
+
+    for i, m in enumerate(metabolites):
+
+        add_cbar_under(
+            bottom_axes[("err", m)],
+            mappable_err[m],
+            err_cbar_labels[i],
+        )
 
     fig.subplots_adjust(bottom=0.12)
 
