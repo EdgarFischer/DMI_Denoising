@@ -1,17 +1,17 @@
 run:
-  name: SNR1 #"Sim_Lesion_double_xyf-z_continued" # give your model a name
+  name: Sim_Constant_Offset #"Sim_Lesion_double_xyf-z_continued" # give your model a name
   base_dir: "trained_models" # this is where you want to save the trained model, diretory relative to project root
   gpu: "3" # check GPU availabiliy with nvidia-smi
   seed: 42
 
-resume_training: True # load pretrained model exactly with optimizer state etc etc 
+resume_training: False # load pretrained model exactly with optimizer state etc etc 
 resume_ckpt: #"trained_models/Sim_Lesion_double_xyf-z/checkpoints/last.pt"
 
 data:
-  base_dir: "datasets/DMI/Simulations/SNRExperiments_double_radius/SNR1/" #path to your data folders, relative to project root
-  data_filename: "data_tMPPCA.npy" # data_after_walinet.npy
-  train: ['Noise_1', 'Noise_2', 'Noise_3', 'Noise_4', 'Noise_5']
-  val:   ['Noise_6']
+  base_dir: "datasets/DMI/Simulations/Lesion_double_radius/" #path to your data folders, relative to project root
+  data_filename: "data_plus_voxel.npy" # data_after_walinet.npy
+  train: ['Simulated_Lesion_double_1_normalized', 'Simulated_Lesion_double_2_normalized', 'Simulated_Lesion_double_3_normalized', 'Simulated_Lesion_double_4_normalized', 'Simulated_Lesion_double_5_normalized']
+  val:   ['Simulated_Lesion_double_6_normalized']
 
   image_axes: [3, 4]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition. 
   # important: This refers to GLOBAL axes, which means the axes positions in your original array as it is loaded 

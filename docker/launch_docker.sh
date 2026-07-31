@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-WORKSPACE="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../" && pwd)"
+WORKSPACE="$(cd "${SCRIPT_DIR}/../../../" && pwd)"
 
-CONTAINER_NAME="mrjo"
+CONTAINER_NAME="Kevin"
 IMAGE_NAME="deep"
 
 REPO_NAME="$(basename "$REPO_ROOT")"
@@ -20,7 +20,7 @@ GPU_ARGS=(--gpus all)
 BASE_ARGS=(
   -d
   --name "${CONTAINER_NAME}"
-  -p 7017:8888
+  -p 7025:8888
   -v "${WORKSPACE}:/workspace"
 )
 
