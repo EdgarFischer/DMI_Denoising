@@ -104,9 +104,117 @@ class BaselineFreeBasisDecoder(nn.Module):
                     f"{tuple(value.shape)}."
                 )
 
+        lcmodel_values = (
+            parameters.metabolite_frequency_shift_hz,
+            parameters.metabolite_lorentzian_fwhm_hz,
+            parameters.lineshape_kernel,
+        )
+        if any(value is not None for value in lcmodel_values):
+            if not all(value is not None for value in lcmodel_values):
+                raise ValueError(
+                    "LCModel-like shift, Lorentzian, and kernel parameters "
+                    "must either all be provided or all be omitted."
+                )
+            component_shape = (*expected, self.n_basis_components)
+            if tuple(parameters.metabolite_frequency_shift_hz.shape) != component_shape:
+                raise ValueError(
+                    "metabolite_frequency_shift_hz must have shape "
+                    f"{component_shape}."
+                )
+            if tuple(parameters.metabolite_lorentzian_fwhm_hz.shape) != component_shape:
+                raise ValueError(
+                    "metabolite_lorentzian_fwhm_hz must have shape "
+                    f"{component_shape}."
+                )
+            if parameters.lineshape_kernel.shape[:-1] != expected:
+                raise ValueError(
+                    "lineshape_kernel leading dimensions must match amplitudes."
+                )
+            if (
+                parameters.lineshape_kernel.shape[-1] < 3
+                or parameters.lineshape_kernel.shape[-1] % 2 != 1
+            ):
+                raise ValueError("lineshape_kernel length must be odd and >= 3.")
+
+    @staticmethod
+    def _same_convolution(signal: Tensor, kernel: Tensor) -> Tensor:
+        """Batched linear convolution with one real kernel per spectrum."""
+        n_signal = signal.shape[-1]
+        n_kernel = kernel.shape[-1]
+        full_length = n_signal + n_kernel - 1
+        kernel = kernel / kernel.sum(dim=-1, keepdim=True).clamp_min(
+            torch.finfo(kernel.dtype).eps
+        )
+        convolved = torch.fft.ifft(
+            torch.fft.fft(signal, n=full_length, dim=-1)
+            * torch.fft.fft(kernel, n=full_length, dim=-1),
+            n=full_length,
+            dim=-1,
+        )
+        start = n_kernel // 2
+        return convolved[..., start : start + n_signal]
+
+    def _decode_lcmodel_spectra(self, parameters: SpectralParameters) -> Tensor:
+        """Phive/LCModel-like synthesis without any baseline component."""
+        time = self.time_axis_seconds
+        amplitudes = parameters.amplitudes.to(dtype=self.basis_fids.dtype)
+        # Accumulate components one at a time. Materializing
+        # (..., n_metabolites, n_timepoints) would be prohibitively large for
+        # the configured 100 x 16 x 16 training batches.
+        fid = torch.zeros(
+            *parameters.leading_shape,
+            self.n_timepoints,
+            dtype=self.basis_fids.dtype,
+            device=self.basis_fids.device,
+        )
+        for index in range(self.n_basis_components):
+            effective_shift = (
+                parameters.frequency_shift_hz
+                + parameters.metabolite_frequency_shift_hz[..., index]
+            )
+            phase = torch.polar(
+                torch.ones_like(effective_shift[..., None] * time),
+                2.0 * math.pi * effective_shift[..., None] * time,
+            )
+            decay = torch.exp(
+                -math.pi
+                * parameters.metabolite_lorentzian_fwhm_hz[..., index, None]
+                * time
+            )
+            fid = fid + (
+                amplitudes[..., index, None]
+                * self.basis_fids[index]
+                * phase
+                * decay
+            )
+        phase0 = torch.polar(
+            torch.ones_like(parameters.zero_order_phase_radians[..., None]),
+            parameters.zero_order_phase_radians[..., None],
+        )
+        spectrum = torch.fft.fft(fid * phase0, dim=-1)
+        phase1_angle = (
+            parameters.first_order_phase_rad_per_hz[..., None]
+            * self.frequency_axis_hz
+        )
+        spectrum = spectrum * torch.polar(
+            torch.ones_like(phase1_angle), phase1_angle
+        )
+        spectrum = torch.fft.fftshift(spectrum, dim=-1)
+        return self._same_convolution(
+            spectrum, parameters.lineshape_kernel.to(spectrum.real.dtype)
+        ).contiguous()
+
     def decode_fids(self, parameters: SpectralParameters) -> Tensor:
         """Decode parameters to complex FIDs with shape ``(..., time)``."""
         self._validate_parameters(parameters)
+
+        if parameters.lineshape_kernel is not None:
+            return torch.fft.ifft(
+                torch.fft.ifftshift(
+                    self._decode_lcmodel_spectra(parameters), dim=-1
+                ),
+                dim=-1,
+            ).contiguous()
 
         amplitudes = parameters.amplitudes.to(dtype=self.basis_fids.dtype)
         metabolite_fids = amplitudes @ self.basis_fids
@@ -146,6 +254,9 @@ class BaselineFreeBasisDecoder(nn.Module):
 
     def decode_spectra(self, parameters: SpectralParameters) -> Tensor:
         """Decode parameters to complex fftshifted spectra."""
+        self._validate_parameters(parameters)
+        if parameters.lineshape_kernel is not None:
+            return self._decode_lcmodel_spectra(parameters)
         return torch.fft.fftshift(
             torch.fft.fft(self.decode_fids(parameters), dim=-1), dim=-1
         ).contiguous()

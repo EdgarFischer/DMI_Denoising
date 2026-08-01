@@ -44,6 +44,8 @@ def build_model(cfg, sample_shape: tuple[int, ...]) -> nn.Module:
         spectral_axis = int(cfg.data.spectral_axis)
         input_n_timepoints = int(sample_shape[spectral_axis + 1])
         parameter_means = parameter_stds = None
+        baseline_real_mean = baseline_real_std = None
+        baseline_imag_mean = baseline_imag_std = None
         teacher_to_model_amplitude_scale = 1.0
         if physics.parameter_statistics_path is not None:
             statistics_path = Path(physics.parameter_statistics_path)
@@ -66,6 +68,40 @@ def build_model(cfg, sample_shape: tuple[int, ...]) -> nn.Module:
             teacher_to_model_amplitude_scale = float(
                 statistics.get("teacher_to_model_amplitude_scale", 1.0)
             )
+        if physics.baseline_n_splines:
+            if physics.baseline_coefficient_statistics_path is None:
+                raise ValueError(
+                    "baseline_coefficient_statistics_path is required when "
+                    "baseline_n_splines > 0."
+                )
+            baseline_statistics_path = Path(
+                physics.baseline_coefficient_statistics_path
+            )
+            baseline_statistics = json.loads(
+                baseline_statistics_path.read_text(encoding="utf-8")
+            )
+            if int(baseline_statistics["n_splines"]) != physics.baseline_n_splines:
+                raise ValueError("Baseline statistics n_splines does not match config.")
+            if physics.baseline_ppm_range is None:
+                raise ValueError("baseline_ppm_range is required with a baseline.")
+            if tuple(float(x) for x in baseline_statistics["ppm_bounds"]) != tuple(
+                physics.baseline_ppm_range
+            ):
+                raise ValueError("Baseline statistics ppm_bounds does not match config.")
+            statistics_scale = float(
+                baseline_statistics.get("ford_to_model_baseline_scale", 1.0)
+            )
+            if not abs(
+                statistics_scale - physics.baseline_ford_to_model_scale
+            ) <= 1e-9 * max(1.0, abs(statistics_scale)):
+                raise ValueError(
+                    "Baseline forD-to-model scale differs between statistics "
+                    "and training config."
+                )
+            baseline_real_mean = tuple(float(x) for x in baseline_statistics["real_mean"])
+            baseline_real_std = tuple(float(x) for x in baseline_statistics["real_std"])
+            baseline_imag_mean = tuple(float(x) for x in baseline_statistics["imag_mean"])
+            baseline_imag_std = tuple(float(x) for x in baseline_statistics["imag_std"])
         return PhysicsConv3D(
             decoder,
             input_n_timepoints=input_n_timepoints,
@@ -90,6 +126,23 @@ def build_model(cfg, sample_shape: tuple[int, ...]) -> nn.Module:
             denoising_ppm_range=physics.denoising_ppm_range,
             ppm_reference=physics.ppm_reference,
             hz_per_ppm=physics.hz_per_ppm,
+            lineshape_model=physics.lineshape_model,
+            lineshape_kernel_size=physics.lineshape_kernel_size,
+            maximum_metabolite_frequency_shift_hz=(
+                physics.maximum_metabolite_frequency_shift_hz
+            ),
+            baseline_n_splines=physics.baseline_n_splines,
+            baseline_ppm_range=physics.baseline_ppm_range,
+            baseline_conjugate_subject_signals=(
+                physics.baseline_conjugate_subject_signals
+            ),
+            baseline_ford_to_model_scale=(
+                physics.baseline_ford_to_model_scale
+            ),
+            baseline_real_mean=baseline_real_mean,
+            baseline_real_std=baseline_real_std,
+            baseline_imag_mean=baseline_imag_mean,
+            baseline_imag_std=baseline_imag_std,
         )
     raise ValueError(
         "Unknown model architecture "

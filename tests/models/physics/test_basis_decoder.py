@@ -7,6 +7,7 @@ import torch
 
 from denoising.models.physics import (
     BaselineFreeBasisDecoder,
+    LCModelKernelParameterization,
     SpectralParameters,
 )
 
@@ -117,6 +118,7 @@ def test_all_physical_inputs_receive_finite_gradients():
     values = {
         name: value.detach().requires_grad_(True)
         for name, value in _parameters((3,), basis.shape[0]).__dict__.items()
+        if value is not None
     }
     parameters = SpectralParameters(**values)
 
@@ -126,6 +128,40 @@ def test_all_physical_inputs_receive_finite_gradients():
     for name, value in values.items():
         assert value.grad is not None, name
         assert torch.isfinite(value.grad).all(), name
+
+
+def test_lcmodel_kernel_delta_matches_per_metabolite_lorentz_model():
+    basis = _basis(n_basis=2)
+    decoder = BaselineFreeBasisDecoder(basis, 1 / 2000)
+    leading = (3,)
+    generator = torch.Generator().manual_seed(71)
+    kernel = torch.zeros(*leading, 23)
+    kernel[..., 11] = 1.0
+    parameters = SpectralParameters(
+        amplitudes=torch.rand(*leading, 2, generator=generator),
+        frequency_shift_hz=torch.randn(*leading, generator=generator),
+        lorentzian_fwhm_hz=torch.zeros(*leading),
+        gaussian_fwhm_hz=torch.zeros(*leading),
+        zero_order_phase_radians=0.1 * torch.randn(*leading, generator=generator),
+        first_order_phase_rad_per_hz=1e-3 * torch.randn(*leading, generator=generator),
+        metabolite_frequency_shift_hz=torch.zeros(*leading, 2),
+        metabolite_lorentzian_fwhm_hz=torch.full((*leading, 2), 5.0),
+        lineshape_kernel=kernel,
+    )
+    result = decoder(parameters)
+    assert result.shape == (*leading, basis.shape[-1])
+    assert torch.isfinite(result.real).all()
+    assert torch.isfinite(result.imag).all()
+
+
+def test_lcmodel_kernel_all_parameters_receive_gradients():
+    basis = _basis(n_basis=2)
+    decoder = BaselineFreeBasisDecoder(basis, 1 / 2000)
+    layer = LCModelKernelParameterization(2, lineshape_kernel_size=23)
+    raw = torch.randn(2, layer.n_output_parameters, 1, 1, requires_grad=True)
+    decoder(layer(raw)).abs().square().mean().backward()
+    assert raw.grad is not None
+    assert torch.isfinite(raw.grad).all()
 
 
 def test_decoder_has_no_trainable_parameters_or_baseline_state():

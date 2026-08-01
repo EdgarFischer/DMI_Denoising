@@ -262,6 +262,35 @@ def build_config(raw: dict) -> Config:
             parameter_head_weight_std=float(
                 physics_raw.get("parameter_head_weight_std", 1e-3)
             ),
+            lineshape_model=str(
+                physics_raw.get("lineshape_model", "global_voigt")
+            ),
+            lineshape_kernel_size=int(
+                physics_raw.get("lineshape_kernel_size", 23)
+            ),
+            maximum_metabolite_frequency_shift_hz=float(
+                physics_raw.get(
+                    "maximum_metabolite_frequency_shift_hz", 5.0
+                )
+            ),
+            baseline_n_splines=int(
+                physics_raw.get("baseline_n_splines", 0)
+            ),
+            baseline_ppm_range=(
+                None if physics_raw.get("baseline_ppm_range") is None
+                else tuple(float(value) for value in physics_raw["baseline_ppm_range"])
+            ),
+            baseline_conjugate_subject_signals=bool(
+                physics_raw.get("baseline_conjugate_subject_signals", False)
+            ),
+            baseline_ford_to_model_scale=float(
+                physics_raw.get("baseline_ford_to_model_scale", 1.0)
+            ),
+            baseline_coefficient_statistics_path=(
+                None
+                if physics_raw.get("baseline_coefficient_statistics_path") is None
+                else str(physics_raw["baseline_coefficient_statistics_path"])
+            ),
         )
     model = ModelCfg(
         features=tuple(model_raw["features"]),

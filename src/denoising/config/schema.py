@@ -97,6 +97,14 @@ class PhysicsCfg:
     initial_lorentzian_fwhm_hz: float = 5.0
     initial_gaussian_fwhm_hz: float = 3.0
     parameter_head_weight_std: float = 1e-3
+    lineshape_model: str = "global_voigt"
+    lineshape_kernel_size: int = 23
+    maximum_metabolite_frequency_shift_hz: float = 5.0
+    baseline_n_splines: int = 0
+    baseline_ppm_range: Optional[Tuple[float, float]] = None
+    baseline_conjugate_subject_signals: bool = False
+    baseline_ford_to_model_scale: float = 1.0
+    baseline_coefficient_statistics_path: Optional[str] = None
 
 
 @dataclass(frozen=True)

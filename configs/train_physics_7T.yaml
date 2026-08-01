@@ -1,14 +1,16 @@
-# Full 7T training for the baseline-free physics model.
-# Data arrays have global shape (X, Y, Z, F) = (64, 64, 35, 840).
+# Full 7T training for the physics model with the exact forD spline baseline.
+# MS_180 has global shape (X, Y, Z, F) = (64, 64, 33, 558).
 
 run:
-  name: PhysicsConv3D_7T_N2V_MS_180
+  name: PhysicsConv3D_7T_N2V_forDBaseline_SoftplusFWHM_MS_180
   base_dir: trained_models
   gpu: "0"
   seed: 42
 
 resume_training: false
-resume_ckpt: "" #/ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/trained_models/PhysicsConv3D_7T_supervised_forD/checkpoints/best.pt
+# This is deliberately a fresh baseline run. Do not load a baseline-free
+# checkpoint because its parameter head has fewer output channels.
+resume_ckpt: ""
 
 data:
   base_dir: datasets/Proton/7T/B0corrected_wo_LipidMask
@@ -112,12 +114,15 @@ model:
     active_metabolites_only: false
     basis_components:
       [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu]
+    # Hybrid scaling: reuse calibrated Z-score scales for amplitudes and the
+    # retained global shift/phase parameters. New per-metabolite lineshape
+    # parameters and the normalized kernel remain directly constrained.
     parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_Vol1_Brisbane.json
     denoising_ppm_range: [1.8, 4.2]
     ppm_reference: 4.65
     hz_per_ppm: 297.222931
 
-    # 840 -> 420 -> 210 -> 105 -> 53 -> 27 -> 14 frequency features.
+    # 558 -> 279 -> 140 -> 70 -> 35 -> 18 -> 9 frequency features.
     spectral_strides: [2, 2, 2, 2, 2, 2]
     spectral_kernel_size: 5
     spatial_kernel_size: 3
@@ -125,18 +130,41 @@ model:
 
     # Starting point only: basis amplitudes are inverse-RMS weighted and
     # jointly scaled to this reconstruction RMS. Shift and phases start at 0.
-    initial_reconstruction_rms: 0.025
+    # Start near the observed normalized in-vivo spectral scale instead of
+    # close to the trivial zero reconstruction.
+    initial_reconstruction_rms: 0.25
     initial_lorentzian_fwhm_hz: 5.0
     initial_gaussian_fwhm_hz: 3.0
     parameter_head_weight_std: 0.02
 
-  # Fixed minimal parameterization inside the model:
-  #   amplitudes       -> softplus(raw), positive and unbounded
-  #   Lorentz/Gaussian -> log1p(softplus(raw)), positive and unbounded;
-  #                       gradients decrease for increasingly large FWHM
-  #   frequency/phase0 -> identity, unbounded
-  #   phase1           -> identity, unbounded
-  # No coordinate scales, bounds, or loss priors are applied.
+    # LCModel/Phive-like baseline-free lineshape:
+    # one common flexible kernel, plus per-metabolite Lorentz broadening and
+    # small relative frequency shifts. Global frequency and phase remain.
+    lineshape_model: lcmodel_kernel
+    lineshape_kernel_size: 23
+    maximum_metabolite_frequency_shift_hz: 5.0
+
+    # Exact forD baseline model used by MetabMapsAfterWalinet_2.1:
+    # nine cubic B-splines with boundary knots, independently parameterized
+    # for real and imaginary spectra (18 coefficients per voxel).
+    baseline_n_splines: 9
+    baseline_ppm_range: [1.8, 4.1]
+    # The corresponding forD config fits conjugated subject FIDs. The model
+    # maps that exact baseline back to the original Denoising orientation.
+    baseline_conjugate_subject_signals: true
+    # Exact conversion from forD's frequency-domain Z-score units to the
+    # global max-abs-FID units used by this Denoising dataset.
+    baseline_ford_to_model_scale: 0.34802767666497547
+    baseline_coefficient_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/ford_baseline_stats_7T_MS180.json
+
+  # New parameterization inside the model:
+  #   amplitudes                    -> softplus, positive
+  #   metabolite Lorentz FWHM       -> softplus, positive and unbounded
+  #   metabolite relative shifts    -> tanh, limited to +/-5 Hz
+  #   common 23-bin lineshape       -> softmax, positive and normalized
+  #   global frequency/phase 0/1    -> identity
+  # There is no learned residual branch. The only baseline is the fixed,
+  # linear 9+9 coefficient forD cubic B-spline model above.
 
 optim:
   lr: 0.0005

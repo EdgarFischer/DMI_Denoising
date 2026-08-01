@@ -9,7 +9,7 @@ from torch import Tensor
 
 @dataclass(frozen=True)
 class SpectralParameters:
-    """Physical parameters for baseline-free basis reconstruction.
+    """Physical parameters for basis reconstruction with optional forD baseline.
 
     ``amplitudes`` has shape ``(..., n_basis)``. Every nuisance-parameter
     tensor has the matching leading shape ``(...)``. Leading dimensions may
@@ -30,6 +30,11 @@ class SpectralParameters:
     gaussian_fwhm_hz: Tensor
     zero_order_phase_radians: Tensor
     first_order_phase_rad_per_hz: Tensor
+    metabolite_frequency_shift_hz: Tensor | None = None
+    metabolite_lorentzian_fwhm_hz: Tensor | None = None
+    lineshape_kernel: Tensor | None = None
+    baseline_coefficients_real: Tensor | None = None
+    baseline_coefficients_imag: Tensor | None = None
 
     @property
     def leading_shape(self) -> tuple[int, ...]:
