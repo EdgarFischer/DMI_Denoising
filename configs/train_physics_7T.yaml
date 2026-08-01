@@ -1,0 +1,156 @@
+# Full 7T training for the baseline-free physics model.
+# Data arrays have global shape (X, Y, Z, F) = (64, 64, 35, 840).
+
+run:
+  name: PhysicsConv3D_7T_N2V_MS_180
+  base_dir: trained_models
+  gpu: "0"
+  seed: 42
+
+resume_training: false
+resume_ckpt: "" #/ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/trained_models/PhysicsConv3D_7T_supervised_forD/checkpoints/best.pt
+
+data:
+  base_dir: datasets/Proton/7T/B0corrected_wo_LipidMask
+  data_filename: OriginalData/data_after_walinet.npy
+  spatial_mask_filename: masks/brain_mask.npy
+
+  # Full WALINET 7T training/validation split.
+  train:
+    - MS_180
+    #- Vol4_Brisbane
+    #- Vol5_Brisbane
+    #- Vol6_Brisbane
+    #- Vol2_London
+    #- Vol3_London
+    #- Vol4_London
+    #- Vol5_London
+    #- Vol6
+    #- Vol7
+    #- Vol8
+    #- Vol9
+  val:
+    - MS_180
+    #- Vol1_Brisbane
+    #- Vol1_London
+
+  # Global source axes: 0=X, 1=Y, 2=Z, 3=FID/frequency.
+  # One Z slice is sampled per item; the network sees X, Y, and F.
+  image_axes: [0, 1, 3]
+
+  # Local position inside image_axes: [X, Y, F] -> F is local axis 2.
+  spectral_axis: 2
+  channel_axis: null
+
+  # data_after_walinet.npy contains complex FIDs. Convert global axis 3
+  # to the fftshifted spectrum expected by the physical decoder and loss.
+  fourier_axes: [3]
+
+  num_samples: 1000
+  val_samples: 200
+
+  # Existing Denoising behavior: normalize each subject in the FID domain
+  # by its maximum absolute value before FFT. This is suitable for the first
+  # training; quantitative amplitude rescaling will be handled later.
+  normalization: true
+
+  view_sampling:
+    enabled: false
+    views: []
+
+augmentation:
+  enabled: true
+
+  # This augmentation is exactly representable by the free phase-0 map.
+  global_phase:
+    enabled: true
+    p: 1.0
+
+  permutation:
+    enabled: false
+    p: 0.0
+    axes: []
+
+  inversion:
+    enabled: false
+    p: 0.0
+    axes: []
+
+  global_scale:
+    enabled: false
+    p: 0.0
+    min: 1.0
+    max: 1.0
+
+patching:
+  enabled: true
+
+  # Local order [X, Y, F]. Keep the complete spectrum and sample small
+  # spatial patches to keep GPU memory usage controlled.
+  patch_sizes: [16, 16, null]
+
+masking:
+  # Mask spectral positions; real and imaginary values are replaced jointly.
+  # The Dataset intersects this N2V mask with the subject's brain mask, so
+  # background pixels never contribute to the loss.
+  masked_axes: [2]
+  mask_fraction: 0.1
+  window_size: 3
+
+model:
+  architecture: physics_conv3d
+
+  # The spatial size remains 16x16 throughout. Only F is downsampled.
+  features: [8, 16, 24, 32, 48, 64]
+
+  physics:
+    # Source of LCModel basis, acquisition bandwidth, length, and dwell time.
+    simulation_config: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/walinet/configs/Simulation/7T_on_the_fly_558.yaml
+    basis_dataset: clean_fid
+    # Keep this order identical to supervised forD pretraining so its
+    # checkpoint can be loaded strictly as the N2V initialization.
+    active_metabolites_only: false
+    basis_components:
+      [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu]
+    parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_Vol1_Brisbane.json
+    denoising_ppm_range: [1.8, 4.2]
+    ppm_reference: 4.65
+    hz_per_ppm: 297.222931
+
+    # 840 -> 420 -> 210 -> 105 -> 53 -> 27 -> 14 frequency features.
+    spectral_strides: [2, 2, 2, 2, 2, 2]
+    spectral_kernel_size: 5
+    spatial_kernel_size: 3
+    parameter_head_hidden_channels: 128
+
+    # Starting point only: basis amplitudes are inverse-RMS weighted and
+    # jointly scaled to this reconstruction RMS. Shift and phases start at 0.
+    initial_reconstruction_rms: 0.025
+    initial_lorentzian_fwhm_hz: 5.0
+    initial_gaussian_fwhm_hz: 3.0
+    parameter_head_weight_std: 0.02
+
+  # Fixed minimal parameterization inside the model:
+  #   amplitudes       -> softplus(raw), positive and unbounded
+  #   Lorentz/Gaussian -> log1p(softplus(raw)), positive and unbounded;
+  #                       gradients decrease for increasingly large FWHM
+  #   frequency/phase0 -> identity, unbounded
+  #   phase1           -> identity, unbounded
+  # No coordinate scales, bounds, or loss priors are applied.
+
+optim:
+  lr: 0.0005
+  factor: 0.5
+  step_size: 50
+  min_lr: 0.00002
+  epochs: 500
+
+  # Conservative first-run settings. Increase after observing GPU memory.
+  batch_size: 100
+  num_workers: 0
+
+inference:
+  # Local order [X, Y, F]. These settings are included for completeness;
+  # physics-model inference/parameter export will be connected separately.
+  patch_strides: [8, 8, null]
+  weight_mode: hann

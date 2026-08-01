@@ -1,0 +1,88 @@
+# Plain-MSE supervised PhysicsConv3D pretraining from GPU-forD maps.
+training_mode: physics_supervised
+
+run:
+  name: PhysicsConv3D_7T_supervised_forD
+  base_dir: trained_models
+  gpu: "0"
+  seed: 42
+
+resume_training: false
+resume_ckpt: ""
+
+data:
+  base_dir: datasets/Proton/7T/B0corrected_wo_LipidMask
+  data_filename: OriginalData/data_after_walinet.npy
+  spatial_mask_filename: masks/brain_mask.npy
+  target_dirname: MetabMapsAfterWalinet_2.1
+
+  # Proof-of-concept while only Vol1_Brisbane has the new parameter export.
+  # Replace validation with an independent fitted subject as soon as present.
+  train: [Vol1_Brisbane]
+  val: [Vol1_Brisbane]
+
+  image_axes: [0, 1, 3]
+  spectral_axis: 2
+  channel_axis: null
+  fourier_axes: [3]
+  normalization: true
+  num_samples: 2000
+  val_samples: 400
+
+  view_sampling:
+    enabled: false
+    views: []
+
+augmentation:
+  enabled: false
+  global_phase: {enabled: false, p: 0.0}
+  permutation: {enabled: false, p: 0.0, axes: []}
+  inversion: {enabled: false, p: 0.0, axes: []}
+  global_scale: {enabled: false, p: 0.0, min: 1.0, max: 1.0}
+
+patching:
+  enabled: true
+  patch_sizes: [16, 16, null]
+
+# Parsed for config compatibility; unused in supervised training.
+masking:
+  masked_axes: [2]
+  mask_fraction: 0.1
+  window_size: 3
+
+model:
+  architecture: physics_conv3d
+  features: [8, 16, 24, 32, 48, 64]
+
+  physics:
+    simulation_config: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/walinet/configs/Simulation/7T_on_the_fly.yaml
+    basis_dataset: clean_fid
+    active_metabolites_only: false
+
+    # Must exactly match the metabolite order in the running classical-forD
+    # 7T config and parameter_maps_metadata.json.
+    basis_components:
+      [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu]
+    parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_Vol1_Brisbane.json
+
+    spectral_strides: [2, 2, 2, 2, 2, 2]
+    spectral_kernel_size: 5
+    spatial_kernel_size: 3
+    parameter_head_hidden_channels: 128
+    initial_reconstruction_rms: 0.025
+    initial_lorentzian_fwhm_hz: 5.0
+    initial_gaussian_fwhm_hz: 3.0
+    parameter_head_weight_std: 0.02
+
+optim:
+  lr: 0.0005
+  factor: 0.5
+  step_size: 50
+  min_lr: 0.00002
+  epochs: 100
+  batch_size: 8
+  num_workers: 0
+
+inference:
+  patch_strides: [8, 8, null]
+  weight_mode: hann

@@ -59,6 +59,21 @@ def main(cfg, config_path: str | None = None):
         except PermissionError:
             pass
 
+    if cfg.training_mode == "physics_supervised":
+        from denoising.training.trainers.trainer_physics_supervised import (
+            train as train_func,
+        )
+        print("[train] Starting supervised PhysicsConv3D parameter pretraining")
+        train_func(
+            cfg=cfg,
+            run_dir=str(run_dir),
+            checkpoint_dir=str(checkpoint_dir),
+            log_dir=str(log_dir),
+        )
+        return
+    if cfg.training_mode != "n2v":
+        raise ValueError(f"Unknown training_mode: {cfg.training_mode!r}")
+
     # ------------------------------------------------------------------
     # 5) Build masking transform based on cfg.mask.masked_axes
     # ------------------------------------------------------------------

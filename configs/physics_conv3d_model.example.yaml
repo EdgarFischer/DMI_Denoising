@@ -1,0 +1,20 @@
+# Copy this model block into a training config and set data.image_axes to
+# [X, Y, F] (global axes) and data.spectral_axis to 2 (local F position).
+model:
+  architecture: physics_conv3d
+  features: [16, 32, 48, 64, 96, 128]
+
+  physics:
+    # Source of the acquisition-matched LCModel basis and dwell time.
+    simulation_config: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/walinet/configs/Simulation/7T_on_the_fly.yaml
+    basis_dataset: clean_fid
+
+    # Downsample frequency only. Spatial X/Y resolution is unchanged.
+    spectral_strides: [2, 2, 2, 2, 2, 2]
+    spectral_kernel_size: 5
+    spatial_kernel_size: 3
+    parameter_head_hidden_channels: 256
+
+# Parameterization is intentionally not configurable in this first model:
+# amplitudes, Lorentz FWHM, Gaussian FWHM -> softplus (non-negative)
+# frequency shift, phase 0, phase 1       -> identity (unbounded)

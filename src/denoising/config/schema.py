@@ -27,6 +27,9 @@ class DataCfg:
     val_samples: int
     normalization: bool
     view_sampling: Optional[ViewSamplingCfg] = None
+    spectral_axis: Optional[int] = None
+    spatial_mask_filename: Optional[str] = None
+    target_dirname: Optional[str] = None
 
 @dataclass(frozen=True)
 class GlobalPhaseAugCfg:
@@ -77,8 +80,30 @@ class MaskCfg:
 
 
 @dataclass(frozen=True)
+class PhysicsCfg:
+    simulation_config: str
+    basis_dataset: str = "clean_fid"
+    active_metabolites_only: bool = True
+    basis_components: Optional[Tuple[str, ...]] = None
+    parameter_statistics_path: Optional[str] = None
+    denoising_ppm_range: Optional[Tuple[float, float]] = None
+    ppm_reference: float = 4.65
+    hz_per_ppm: Optional[float] = None
+    spectral_strides: Tuple[int, ...] = (2, 2, 2, 2, 2, 2)
+    spectral_kernel_size: int = 5
+    spatial_kernel_size: int = 3
+    parameter_head_hidden_channels: int = 256
+    initial_reconstruction_rms: float = 0.025
+    initial_lorentzian_fwhm_hz: float = 5.0
+    initial_gaussian_fwhm_hz: float = 3.0
+    parameter_head_weight_std: float = 1e-3
+
+
+@dataclass(frozen=True)
 class ModelCfg:
     features: Tuple[int, ...]
+    architecture: str = "auto_unet"
+    physics: Optional[PhysicsCfg] = None
 
 
 @dataclass(frozen=True)
@@ -109,3 +134,4 @@ class Config:
     inference: Optional[InferenceCfg] = None
     resume_training: bool = False
     resume_ckpt: str = ""
+    training_mode: str = "n2v"

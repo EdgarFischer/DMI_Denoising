@@ -4,7 +4,6 @@ from scipy.io import loadmat
 import logging 
 from pathlib import Path
 import numpy as np
-import SimpleITK as sitk
 
 def load_and_preprocess_data(
     folder_names: list,
@@ -65,6 +64,32 @@ def load_and_preprocess_data(
         arrays.append(arr.astype(np.complex64, copy=False))
 
     return np.concatenate(arrays, axis=-1)
+
+
+def load_spatial_masks_for_preprocessed_data(
+    folder_names: list,
+    base_path: str,
+    mask_filename: str,
+) -> np.ndarray:
+    """Load one 3D spatial mask per subject in stacked-data layout.
+
+    ``load_and_preprocess_data`` represents every subject as a six-dimensional
+    array and concatenates subjects on the final axis. Spatial masks are
+    expanded to ``(X, Y, Z, 1, 1, subject)`` so dataset indexing stays exactly
+    aligned while spectral/repetition axes broadcast naturally.
+    """
+    masks = []
+    for folder in folder_names:
+        path = os.path.join(base_path, folder, mask_filename)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Spatial mask not found: {path}")
+        mask = np.load(path).astype(bool, copy=False)
+        if mask.ndim != 3:
+            raise ValueError(
+                f"Spatial mask must have shape (X, Y, Z), got {mask.shape}: {path}"
+            )
+        masks.append(mask[..., None, None, None])
+    return np.concatenate(masks, axis=-1)
 
 def load_dataset_list_from_folders(
     folder_names,
@@ -232,6 +257,14 @@ def load_sd_maps(folder):
             ...
         }
     """
+    try:
+        import SimpleITK as sitk
+    except ImportError as error:
+        raise ImportError(
+            "load_sd_maps requires the optional SimpleITK package. "
+            "It is not required for NumPy training data."
+        ) from error
+
     folder = Path(folder)
 
     if not folder.exists():

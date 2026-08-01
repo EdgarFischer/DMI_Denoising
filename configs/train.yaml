@@ -14,6 +14,7 @@ data:
   val:   ['Simulated_Lesion_double_6_normalized']
 
   image_axes: [3, 4]  # those are the 2-3 axes for the 2D/3D network, you can also specify 3 axes, and a 3D Network is initiated. 3, 4 is typically FID and repetition. 
+  spectral_axis: null  # local index within image_axes; required by physics_conv3d
   # important: This refers to GLOBAL axes, which means the axes positions in your original array as it is loaded 
   channel_axis: null     # number or null.  if you want you can use the channel axis so the network uses more information simultaneously
   fourier_axes: [3]   # before training, this axis is fourier transformed: Typicalyl FID -> Spectrum. Again GLOBAL axis
@@ -62,6 +63,7 @@ masking:
   window_size: 3        # how big is the windows from which neighbors are drawn
 
 model:
+  architecture: auto_unet  # auto_unet, unet2d, unet3d, or physics_conv3d
   features: [32, 64, 128, 256, 512]
 
 optim:

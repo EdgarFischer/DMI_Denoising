@@ -11,11 +11,13 @@ import torch
 import torch.nn.utils as tnn_utils
 from torch.utils.data import DataLoader
 
-from denoising.data.data_utils import load_and_preprocess_data
+from denoising.data.data_utils import (
+    load_and_preprocess_data,
+    load_spatial_masks_for_preprocessed_data,
+)
 from denoising.data.mrsi_nd_dataset import MRSiNDataset
 from denoising.losses.n2v_loss import masked_mse_loss
-from denoising.models.unet2d import UNet2D
-from denoising.models.unet3d import UNet3D
+from denoising.models.factory import build_model
 
 # ---------------------------
 # Helpers
@@ -55,6 +57,7 @@ def prepare_dataset(
     patching_enabled: bool,
     patch_sizes,
     view_sampling=None,
+    spatial_mask_filename=None,
 ):
     data = load_and_preprocess_data(
         folder_names=folders,
@@ -64,8 +67,17 @@ def prepare_dataset(
         npy_name=data_filename,
     )
 
+    spatial_mask = None
+    if spatial_mask_filename is not None:
+        spatial_mask = load_spatial_masks_for_preprocessed_data(
+            folder_names=folders,
+            base_path=base_path,
+            mask_filename=spatial_mask_filename,
+        )
+
     return MRSiNDataset(
         data=data,
+        spatial_mask=spatial_mask,
         image_axes=tuple(image_axes),
         channel_axis=channel_axis,
         masked_axes=tuple(masked_axes),
@@ -83,6 +95,20 @@ def sample_n2s_mask(shape, p=0.03, device=None):
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     return (torch.rand(shape, device=device) < p).float()
+
+
+def _restrict_to_physics_denoising_window(inp, tgt, mask, model):
+    """Restrict corruption and self-supervised loss to the configured ppm range."""
+    frequency_mask = getattr(model, "denoising_frequency_mask", None)
+    if frequency_mask is None or bool(frequency_mask.all()):
+        return inp, mask
+    spectral_axis = int(model.spectral_axis) + 2
+    shape = [1] * inp.ndim
+    shape[spectral_axis] = frequency_mask.numel()
+    window = frequency_mask.reshape(shape).to(device=inp.device)
+    inp = torch.where(window, inp, tgt)
+    mask = mask.to(device=inp.device) * window.to(dtype=mask.dtype)
+    return inp, mask
 
 def get_rng_state():
     state = {
@@ -148,6 +174,7 @@ def train(
     fourier_axes = cfg.data.fourier_axes
     masked_axes = cfg.mask.masked_axes
     view_sampling = getattr(cfg.data, "view_sampling", None)
+    spatial_mask_filename = getattr(cfg.data, "spatial_mask_filename", None)
 
     num_samples = cfg.data.num_samples
     val_samples = cfg.data.val_samples
@@ -174,6 +201,7 @@ def train(
         patching_enabled=patching_enabled,
         patch_sizes=patch_sizes,
         view_sampling=view_sampling,
+        spatial_mask_filename=spatial_mask_filename,
     )
 
     val_ds = prepare_dataset(
@@ -192,6 +220,7 @@ def train(
         patching_enabled=patching_enabled,
         patch_sizes=patch_sizes,
         view_sampling=view_sampling,
+        spatial_mask_filename=spatial_mask_filename,
     )
 
     # ----- Device & dataloaders -----
@@ -245,18 +274,18 @@ def train(
             logger.warning(f"[DEBUG] Mask debug failed: {e}")
 
     # ----- Model / optim / scheduler -----
-    if spatial_dim == 2:
-        model = UNet2D(in_channels, out_channels, cfg.model.features).to(device)
-        logger.info("[model] Using UNet2D")
-    elif spatial_dim == 3:
-        if UNet3D is None:
-            raise ImportError(
-                "spatial_dim==3 detected, but denoising.models.unet3d.UNet3D could not be imported."
-            )
-        model = UNet3D(in_channels, out_channels, cfg.model.features).to(device)
-        logger.info("[model] Using UNet3D")
-    else:
-        raise ValueError(f"Unsupported spatial_dim={spatial_dim}. Expected 2 or 3.")
+    model = build_model(cfg, tuple(sample_inp.shape)).to(device)
+    logger.info(
+        f"[model] Using {cfg.model.architecture}: "
+        f"{model.__class__.__name__}"
+    )
+    if hasattr(model, "denoising_frequency_mask"):
+        logger.info(
+            "[model] Physics denoising window %s ppm: %d/%d spectral points",
+            model.denoising_ppm_range,
+            int(model.denoising_frequency_mask.sum().item()),
+            int(model.denoising_frequency_mask.numel()),
+        )
 
     optim = torch.optim.Adam(model.parameters(), lr=cfg.optim.lr)
 
@@ -282,7 +311,12 @@ def train(
     start_epoch = 0
     best_val = float("inf")
 
-    if ckpt_path and os.path.isfile(ckpt_path):
+    if ckpt_path and not os.path.isfile(ckpt_path):
+        raise FileNotFoundError(
+            f"Configured pretrained checkpoint does not exist: {ckpt_path}"
+        )
+
+    if ckpt_path:
         ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
         state_dict = ckpt.get("model_state", ckpt)
         strict_flag = getattr(cfg, "pretrained_strict", True)
@@ -359,9 +393,15 @@ def train(
 
             if self_mode == "n2s":
                 mask = sample_n2s_mask(inp[:, :1].shape, p=0.03, device=device)
+                inp, mask = _restrict_to_physics_denoising_window(
+                    inp, tgt, mask, model
+                )
                 inp_masked = inp * (1 - mask)
                 loss = masked_mse_loss(model(inp_masked), tgt, mask)
             else:
+                inp, mask_n2v = _restrict_to_physics_denoising_window(
+                    inp, tgt, mask_n2v, model
+                )
                 loss = masked_mse_loss(model(inp), tgt, mask_n2v)
 
             optim.zero_grad()
@@ -384,9 +424,15 @@ def train(
 
                 if self_mode == "n2s":
                     mask = sample_n2s_mask(inp[:, :1].shape, p=0.03, device=device)
+                    inp, mask = _restrict_to_physics_denoising_window(
+                        inp, tgt, mask, model
+                    )
                     inp_masked = inp * (1 - mask)
                     loss = masked_mse_loss(model(inp_masked), tgt, mask)
                 else:
+                    inp, mask_n2v = _restrict_to_physics_denoising_window(
+                        inp, tgt, mask_n2v, model
+                    )
                     loss = masked_mse_loss(model(inp), tgt, mask_n2v)
 
                 running += loss.item() * inp.size(0)

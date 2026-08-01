@@ -12,11 +12,36 @@ from .schema import (
     PatchingCfg,
     MaskCfg,
     ModelCfg,
+    PhysicsCfg,
     OptimCfg,
     InferenceCfg,
 )
 
 def validate_config(cfg: Config) -> None:
+    if cfg.model.architecture == "physics_conv3d":
+        if cfg.model.physics is None:
+            raise ValueError(
+                "model.physics is required for architecture='physics_conv3d'."
+            )
+        if len(cfg.data.image_axes) != 3:
+            raise ValueError("physics_conv3d requires exactly three image_axes.")
+        if cfg.data.channel_axis is not None:
+            raise ValueError("physics_conv3d currently requires channel_axis: null.")
+        if cfg.data.spectral_axis not in (0, 1, 2):
+            raise ValueError(
+                "data.spectral_axis must be 0, 1, or 2 for physics_conv3d."
+            )
+        if len(cfg.model.features) != len(cfg.model.physics.spectral_strides):
+            raise ValueError(
+                "model.features and model.physics.spectral_strides must have "
+                "the same length."
+            )
+        if any(value < 1 for value in cfg.model.physics.spectral_strides):
+            raise ValueError("All spectral_strides must be >= 1.")
+        if cfg.model.physics.spectral_kernel_size % 2 != 1:
+            raise ValueError("spectral_kernel_size must be odd.")
+        if cfg.model.physics.spatial_kernel_size % 2 != 1:
+            raise ValueError("spatial_kernel_size must be odd.")
     # --- patching ---
     if cfg.patching.enabled:
         num_axes = len(cfg.data.image_axes) + (
@@ -116,6 +141,18 @@ def build_config(raw: dict) -> Config:
         val_samples=int(data_raw["val_samples"]),
         normalization=bool(data_raw.get("normalization", True)),
         view_sampling=view_sampling,
+        spectral_axis=(
+            None if data_raw.get("spectral_axis") is None
+            else int(data_raw["spectral_axis"])
+        ),
+        spatial_mask_filename=(
+            None if data_raw.get("spatial_mask_filename") is None
+            else str(data_raw["spatial_mask_filename"])
+        ),
+        target_dirname=(
+            None if data_raw.get("target_dirname") is None
+            else str(data_raw["target_dirname"])
+        ),
     )
 
     # --- augmentation ---
@@ -172,8 +209,64 @@ def build_config(raw: dict) -> Config:
 
     # --- model ---
     model_raw = raw["model"]
+    physics_raw = model_raw.get("physics")
+    physics = None
+    if physics_raw is not None:
+        physics = PhysicsCfg(
+            simulation_config=str(physics_raw["simulation_config"]),
+            basis_dataset=str(physics_raw.get("basis_dataset", "clean_fid")),
+            active_metabolites_only=bool(
+                physics_raw.get("active_metabolites_only", True)
+            ),
+            basis_components=(
+                None if physics_raw.get("basis_components") is None
+                else tuple(str(name) for name in physics_raw["basis_components"])
+            ),
+            parameter_statistics_path=(
+                None if physics_raw.get("parameter_statistics_path") is None
+                else str(physics_raw["parameter_statistics_path"])
+            ),
+            denoising_ppm_range=(
+                None if physics_raw.get("denoising_ppm_range") is None
+                else tuple(
+                    float(value)
+                    for value in physics_raw["denoising_ppm_range"]
+                )
+            ),
+            ppm_reference=float(physics_raw.get("ppm_reference", 4.65)),
+            hz_per_ppm=(
+                None if physics_raw.get("hz_per_ppm") is None
+                else float(physics_raw["hz_per_ppm"])
+            ),
+            spectral_strides=tuple(
+                int(value) for value in physics_raw.get(
+                    "spectral_strides", (2, 2, 2, 2, 2, 2)
+                )
+            ),
+            spectral_kernel_size=int(
+                physics_raw.get("spectral_kernel_size", 5)
+            ),
+            spatial_kernel_size=int(physics_raw.get("spatial_kernel_size", 3)),
+            parameter_head_hidden_channels=int(
+                physics_raw.get("parameter_head_hidden_channels", 256)
+            ),
+            initial_reconstruction_rms=float(
+                physics_raw.get("initial_reconstruction_rms", 0.025)
+            ),
+            initial_lorentzian_fwhm_hz=float(
+                physics_raw.get("initial_lorentzian_fwhm_hz", 5.0)
+            ),
+            initial_gaussian_fwhm_hz=float(
+                physics_raw.get("initial_gaussian_fwhm_hz", 3.0)
+            ),
+            parameter_head_weight_std=float(
+                physics_raw.get("parameter_head_weight_std", 1e-3)
+            ),
+        )
     model = ModelCfg(
         features=tuple(model_raw["features"]),
+        architecture=str(model_raw.get("architecture", "auto_unet")),
+        physics=physics,
     )
 
     # --- optim ---
@@ -211,6 +304,7 @@ def build_config(raw: dict) -> Config:
         inference=inference,
         resume_training=bool(raw.get("resume_training", False)),
         resume_ckpt=str(raw.get("resume_ckpt", "")),
+        training_mode=str(raw.get("training_mode", "n2v")),
     )
 
     validate_config(cfg)
