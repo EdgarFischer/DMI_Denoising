@@ -101,7 +101,6 @@ def test_teacher_conversion_scales_only_amplitudes():
 def test_lcmodel_kernel_parameterization_constraints_and_shapes():
     layer = LCModelKernelParameterization(
         3, lineshape_kernel_size=23,
-        maximum_metabolite_frequency_shift_hz=5.0,
     )
     raw = torch.randn(2, layer.n_output_parameters, 4, 5)
     parameters = layer(raw)
@@ -111,10 +110,49 @@ def test_lcmodel_kernel_parameterization_constraints_and_shapes():
     assert parameters.lineshape_kernel.shape == (2, 4, 5, 23)
     assert torch.all(parameters.amplitudes > 0)
     assert torch.all(parameters.metabolite_lorentzian_fwhm_hz > 0)
-    assert torch.all(parameters.metabolite_frequency_shift_hz.abs() <= 5.0)
+    torch.testing.assert_close(
+        parameters.metabolite_frequency_shift_hz,
+        raw[:, layer._sections["metabolite_shifts"]].movedim(1, -1),
+    )
     torch.testing.assert_close(
         parameters.lineshape_kernel.sum(-1),
         torch.ones_like(parameters.lineshape_kernel[..., 0]),
+    )
+
+
+def test_lcmodel_lineshape_coordinates_are_standardized_at_initial_point():
+    layer = LCModelKernelParameterization(
+        2,
+        metabolite_shift_mean_hz=0.0,
+        metabolite_shift_std_hz=1.0,
+        metabolite_fwhm_mean_hz=5.0,
+        metabolite_fwhm_std_hz=2.5,
+    )
+    raw = layer.raw_at_initial_values(torch.tensor([0.2, 0.3]), 5.0)
+    raw = raw[None, :, None, None].requires_grad_()
+    parameters = layer(raw)
+
+    torch.testing.assert_close(
+        parameters.metabolite_frequency_shift_hz,
+        torch.zeros(1, 1, 1, 2), atol=1e-6, rtol=0,
+    )
+    torch.testing.assert_close(
+        parameters.metabolite_lorentzian_fwhm_hz,
+        torch.full((1, 1, 1, 2), 5.0), atol=1e-5, rtol=0,
+    )
+    shift_grad = torch.autograd.grad(
+        parameters.metabolite_frequency_shift_hz.sum(), raw, retain_graph=True
+    )[0]
+    fwhm_grad = torch.autograd.grad(
+        parameters.metabolite_lorentzian_fwhm_hz.sum(), raw
+    )[0]
+    torch.testing.assert_close(
+        shift_grad[:, layer._sections["metabolite_shifts"]],
+        torch.ones(1, 2, 1, 1), atol=1e-6, rtol=0,
+    )
+    torch.testing.assert_close(
+        fwhm_grad[:, layer._sections["metabolite_lorentz"]],
+        torch.full((1, 2, 1, 1), 2.5), atol=1e-5, rtol=0,
     )
 
 

@@ -268,10 +268,17 @@ def build_config(raw: dict) -> Config:
             lineshape_kernel_size=int(
                 physics_raw.get("lineshape_kernel_size", 23)
             ),
-            maximum_metabolite_frequency_shift_hz=float(
-                physics_raw.get(
-                    "maximum_metabolite_frequency_shift_hz", 5.0
-                )
+            metabolite_shift_mean_hz=float(
+                physics_raw.get("metabolite_shift_mean_hz", 0.0)
+            ),
+            metabolite_shift_std_hz=float(
+                physics_raw.get("metabolite_shift_std_hz", 1.0)
+            ),
+            metabolite_fwhm_mean_hz=float(
+                physics_raw.get("metabolite_fwhm_mean_hz", 5.0)
+            ),
+            metabolite_fwhm_std_hz=float(
+                physics_raw.get("metabolite_fwhm_std_hz", 2.5)
             ),
             baseline_n_splines=int(
                 physics_raw.get("baseline_n_splines", 0)
@@ -322,6 +329,27 @@ def build_config(raw: dict) -> Config:
             weight_mode=str(inf_raw.get("weight_mode", "hann")),
         )
 
+    regularization_raw = raw.get("parameter_regularization")
+    parameter_regularization = None
+    if regularization_raw is not None:
+        from denoising.config.schema import ParameterRegularizationCfg
+
+        parameter_regularization = ParameterRegularizationCfg(
+            enabled=bool(regularization_raw.get("enabled", False)),
+            shift_weight=float(regularization_raw.get("shift_weight", 0.0)),
+            shift_mean_hz=float(regularization_raw.get("shift_mean_hz", 0.0)),
+            shift_std_hz=float(regularization_raw.get("shift_std_hz", 1.0)),
+            fwhm_weight=float(regularization_raw.get("fwhm_weight", 0.0)),
+            fwhm_mean_hz=float(regularization_raw.get("fwhm_mean_hz", 5.0)),
+            fwhm_std_hz=float(regularization_raw.get("fwhm_std_hz", 2.5)),
+        )
+        if parameter_regularization.shift_std_hz <= 0:
+            raise ValueError("parameter_regularization.shift_std_hz must be > 0")
+        if parameter_regularization.fwhm_std_hz <= 0:
+            raise ValueError("parameter_regularization.fwhm_std_hz must be > 0")
+        if parameter_regularization.shift_weight < 0 or parameter_regularization.fwhm_weight < 0:
+            raise ValueError("parameter regularization weights must be >= 0")
+
     cfg = Config(
         run=run,
         data=data,
@@ -330,6 +358,7 @@ def build_config(raw: dict) -> Config:
         mask=mask,
         model=model,
         optim=optim,
+        parameter_regularization=parameter_regularization,
         inference=inference,
         resume_training=bool(raw.get("resume_training", False)),
         resume_ckpt=str(raw.get("resume_ckpt", "")),

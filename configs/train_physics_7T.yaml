@@ -2,14 +2,13 @@
 # MS_180 has global shape (X, Y, Z, F) = (64, 64, 33, 558).
 
 run:
-  name: PhysicsConv3D_7T_N2V_forDBaseline_SoftplusFWHM_MS_180
+  name: WeakReg_MS_180
   base_dir: trained_models
-  gpu: "0"
+  gpu: "1"
   seed: 42
 
+# Deliberately train a completely new network; no pretrained or resumed state.
 resume_training: false
-# This is deliberately a fresh baseline run. Do not load a baseline-free
-# checkpoint because its parameter head has fewer output channels.
 resume_ckpt: ""
 
 data:
@@ -109,15 +108,15 @@ model:
     # Source of LCModel basis, acquisition bandwidth, length, and dwell time.
     simulation_config: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/walinet/configs/Simulation/7T_on_the_fly_558.yaml
     basis_dataset: clean_fid
-    # Keep this order identical to supervised forD pretraining so its
-    # checkpoint can be loaded strictly as the N2V initialization.
+    # Exact enabled basis-component set of Metabos_healthy_7T_2sigma.yaml.
+    # Config aliases resolve as Scy -> Scyllo and THG -> TwoHG.
     active_metabolites_only: false
     basis_components:
-      [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu]
+      [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu, Glc, TwoHG]
     # Hybrid scaling: reuse calibrated Z-score scales for amplitudes and the
     # retained global shift/phase parameters. New per-metabolite lineshape
     # parameters and the normalized kernel remain directly constrained.
-    parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_Vol1_Brisbane.json
+    parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_healthy_active.json
     denoising_ppm_range: [1.8, 4.2]
     ppm_reference: 4.65
     hz_per_ppm: 297.222931
@@ -142,7 +141,12 @@ model:
     # small relative frequency shifts. Global frequency and phase remain.
     lineshape_model: lcmodel_kernel
     lineshape_kernel_size: 23
-    maximum_metabolite_frequency_shift_hz: 5.0
+    # The network predicts dimensionless, unbounded z coordinates. They are
+    # converted to physical Hz inside the fixed decoder. No loss prior is used.
+    metabolite_shift_mean_hz: 0.0
+    metabolite_shift_std_hz: 1.0
+    metabolite_fwhm_mean_hz: 5.0
+    metabolite_fwhm_std_hz: 2.5
 
     # Exact forD baseline model used by MetabMapsAfterWalinet_2.1:
     # nine cubic B-splines with boundary knots, independently parameterized
@@ -160,11 +164,24 @@ model:
   # New parameterization inside the model:
   #   amplitudes                    -> softplus, positive
   #   metabolite Lorentz FWHM       -> softplus, positive and unbounded
-  #   metabolite relative shifts    -> tanh, limited to +/-5 Hz
+  #   metabolite relative shifts    -> identity in Hz, no bound/saturation
   #   common 23-bin lineshape       -> softmax, positive and normalized
   #   global frequency/phase 0/1    -> identity
   # There is no learned residual branch. The only baseline is the fixed,
   # linear 9+9 coefficient forD cubic B-spline model above.
+
+# LCModel/Phive-style zero-centred Gaussian priors for the metabolite-specific
+# deviations. The 0.2 Hz shift and 1 Hz additional-broadening scales match
+# forD/runs/config.json. The small outer weight accounts for our mean-reduced
+# masked N2V loss versus Phive's differently scaled reconstruction sum.
+parameter_regularization:
+  enabled: true
+  shift_weight: 0.001
+  shift_mean_hz: 0.0
+  shift_std_hz: 0.2
+  fwhm_weight: 0.001
+  fwhm_mean_hz: 0.0
+  fwhm_std_hz: 1.0
 
 optim:
   lr: 0.0005
@@ -174,7 +191,7 @@ optim:
   epochs: 500
 
   # Conservative first-run settings. Increase after observing GPU memory.
-  batch_size: 100
+  batch_size: 70
   num_workers: 0
 
 inference:

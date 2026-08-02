@@ -59,7 +59,7 @@ class LCModelKernelParameterization(nn.Module):
 
     The common non-parametric lineshape is a positive, normalized spectral
     convolution kernel. Each basis component additionally receives its own
-    positive Lorentzian FWHM and a small bounded relative frequency shift.
+    positive Lorentzian FWHM and an unbounded relative frequency shift.
     """
 
     def __init__(
@@ -67,7 +67,10 @@ class LCModelKernelParameterization(nn.Module):
         n_basis_components: int,
         *,
         lineshape_kernel_size: int = 23,
-        maximum_metabolite_frequency_shift_hz: float = 5.0,
+        metabolite_shift_mean_hz: float = 0.0,
+        metabolite_shift_std_hz: float = 1.0,
+        metabolite_fwhm_mean_hz: float = 5.0,
+        metabolite_fwhm_std_hz: float = 2.5,
         baseline_n_splines: int = 0,
         baseline_ford_to_model_scale: float = 1.0,
         baseline_real_mean: tuple[float, ...] | None = None,
@@ -78,10 +81,26 @@ class LCModelKernelParameterization(nn.Module):
         super().__init__()
         self.n_basis_components = int(n_basis_components)
         self.lineshape_kernel_size = int(lineshape_kernel_size)
-        self.maximum_metabolite_frequency_shift_hz = float(
-            maximum_metabolite_frequency_shift_hz
-        )
         self.baseline_n_splines = int(baseline_n_splines)
+        scalar_statistics = torch.tensor(
+            [metabolite_shift_mean_hz, metabolite_shift_std_hz,
+             metabolite_fwhm_mean_hz, metabolite_fwhm_std_hz],
+            dtype=torch.float32,
+        )
+        if not torch.isfinite(scalar_statistics).all():
+            raise ValueError("Metabolite shift/FWHM statistics must be finite.")
+        if metabolite_shift_std_hz <= 0 or metabolite_fwhm_std_hz <= 0:
+            raise ValueError("Metabolite shift/FWHM standard deviations must be > 0.")
+        if metabolite_fwhm_mean_hz <= 0:
+            raise ValueError("Metabolite FWHM mean must be > 0.")
+        self.register_buffer("metabolite_shift_mean_hz", scalar_statistics[0])
+        self.register_buffer("metabolite_shift_std_hz", scalar_statistics[1])
+        fwhm_raw_mean = self._inverse_softplus(scalar_statistics[2])
+        # Choose raw-coordinate scale so dz=1 changes physical FWHM locally
+        # by one requested physical standard deviation at z=0.
+        fwhm_raw_std = scalar_statistics[3] / torch.sigmoid(fwhm_raw_mean)
+        self.register_buffer("metabolite_fwhm_raw_mean", fwhm_raw_mean)
+        self.register_buffer("metabolite_fwhm_raw_std", fwhm_raw_std)
         if not torch.isfinite(torch.tensor(baseline_ford_to_model_scale)):
             raise ValueError("baseline_ford_to_model_scale must be finite.")
         if baseline_ford_to_model_scale <= 0:
@@ -94,8 +113,6 @@ class LCModelKernelParameterization(nn.Module):
             raise ValueError("n_basis_components must be >= 1.")
         if self.lineshape_kernel_size < 3 or self.lineshape_kernel_size % 2 != 1:
             raise ValueError("lineshape_kernel_size must be an odd integer >= 3.")
-        if self.maximum_metabolite_frequency_shift_hz <= 0:
-            raise ValueError("maximum_metabolite_frequency_shift_hz must be > 0.")
         if self.baseline_n_splines < 0:
             raise ValueError("baseline_n_splines must be >= 0.")
         baseline_statistics = (
@@ -128,6 +145,27 @@ class LCModelKernelParameterization(nn.Module):
             + self.lineshape_kernel_size
             + 3
             + 2 * self.baseline_n_splines
+        )
+
+    def _load_from_state_dict(
+        self, state_dict, prefix, local_metadata, strict,
+        missing_keys, unexpected_keys, error_msgs,
+    ):
+        # Checkpoints created immediately before lineshape Z-scaling do not
+        # contain these config-derived buffers. Supply the current config
+        # values so both old and new checkpoints remain strict-loadable.
+        for name in (
+            "metabolite_shift_mean_hz",
+            "metabolite_shift_std_hz",
+            "metabolite_fwhm_raw_mean",
+            "metabolite_fwhm_raw_std",
+        ):
+            key = prefix + name
+            if key not in state_dict:
+                state_dict[key] = getattr(self, name).detach().clone()
+        super()._load_from_state_dict(
+            state_dict, prefix, local_metadata, strict,
+            missing_keys, unexpected_keys, error_msgs,
         )
 
     @property
@@ -164,11 +202,9 @@ class LCModelKernelParameterization(nn.Module):
         raw = amplitudes.new_zeros(self.n_output_parameters)
         sections = self._sections
         raw[sections["amplitudes"]] = self._inverse_softplus(amplitudes)
-        raw[sections["metabolite_lorentz"]] = self._inverse_softplus(
-            amplitudes.new_full(
-                (self.n_basis_components,), float(lorentzian_fwhm_hz)
-            )
-        )
+        # Both new parameter families start at z=0 (their physical means).
+        raw[sections["metabolite_shifts"]] = 0.0
+        raw[sections["metabolite_lorentz"]] = 0.0
         # Start centered, but avoid a saturated softmax so that the side bins
         # retain useful gradients from the first optimization step onward.
         kernel_logits = amplitudes.new_full((self.lineshape_kernel_size,), -2.0)
@@ -186,12 +222,14 @@ class LCModelKernelParameterization(nn.Module):
         amplitudes = torch.nn.functional.softplus(
             raw[:, sections["amplitudes"]]
         ).movedim(1, -1)
+        # Unbounded standardized coordinates; no clamp or saturating tanh.
         metabolite_shifts = (
-            torch.tanh(raw[:, sections["metabolite_shifts"]])
-            * self.maximum_metabolite_frequency_shift_hz
+            self.metabolite_shift_mean_hz
+            + self.metabolite_shift_std_hz * raw[:, sections["metabolite_shifts"]]
         ).movedim(1, -1)
         metabolite_lorentz = torch.nn.functional.softplus(
-            raw[:, sections["metabolite_lorentz"]]
+            self.metabolite_fwhm_raw_mean
+            + self.metabolite_fwhm_raw_std * raw[:, sections["metabolite_lorentz"]]
         ).movedim(1, -1)
         kernel = torch.softmax(raw[:, sections["kernel"]], dim=1).movedim(1, -1)
         leading = raw[:, 0]
@@ -243,7 +281,10 @@ class StandardizedLCModelKernelParameterization(LCModelKernelParameterization):
         stds: tuple[float, ...],
         *,
         lineshape_kernel_size: int = 23,
-        maximum_metabolite_frequency_shift_hz: float = 5.0,
+        metabolite_shift_mean_hz: float = 0.0,
+        metabolite_shift_std_hz: float = 1.0,
+        metabolite_fwhm_mean_hz: float = 5.0,
+        metabolite_fwhm_std_hz: float = 2.5,
         baseline_n_splines: int = 0,
         baseline_ford_to_model_scale: float = 1.0,
         baseline_real_mean: tuple[float, ...] | None = None,
@@ -254,9 +295,10 @@ class StandardizedLCModelKernelParameterization(LCModelKernelParameterization):
         super().__init__(
             n_basis_components,
             lineshape_kernel_size=lineshape_kernel_size,
-            maximum_metabolite_frequency_shift_hz=(
-                maximum_metabolite_frequency_shift_hz
-            ),
+            metabolite_shift_mean_hz=metabolite_shift_mean_hz,
+            metabolite_shift_std_hz=metabolite_shift_std_hz,
+            metabolite_fwhm_mean_hz=metabolite_fwhm_mean_hz,
+            metabolite_fwhm_std_hz=metabolite_fwhm_std_hz,
             baseline_n_splines=baseline_n_splines,
             baseline_ford_to_model_scale=baseline_ford_to_model_scale,
             baseline_real_mean=baseline_real_mean,

@@ -107,7 +107,10 @@ class PhysicsConv3D(nn.Module):
         hz_per_ppm: float | None = None,
         lineshape_model: str = "global_voigt",
         lineshape_kernel_size: int = 23,
-        maximum_metabolite_frequency_shift_hz: float = 5.0,
+        metabolite_shift_mean_hz: float = 0.0,
+        metabolite_shift_std_hz: float = 1.0,
+        metabolite_fwhm_mean_hz: float = 5.0,
+        metabolite_fwhm_std_hz: float = 2.5,
         baseline_n_splines: int = 0,
         baseline_ppm_range: tuple[float, float] | None = None,
         baseline_conjugate_subject_signals: bool = False,
@@ -145,6 +148,10 @@ class PhysicsConv3D(nn.Module):
                 else StandardizedLCModelKernelParameterization
             )
             parameterization_kwargs = dict(
+                metabolite_shift_mean_hz=metabolite_shift_mean_hz,
+                metabolite_shift_std_hz=metabolite_shift_std_hz,
+                metabolite_fwhm_mean_hz=metabolite_fwhm_mean_hz,
+                metabolite_fwhm_std_hz=metabolite_fwhm_std_hz,
                 baseline_n_splines=baseline_n_splines,
                 baseline_ford_to_model_scale=baseline_ford_to_model_scale,
                 baseline_real_mean=baseline_real_mean,
@@ -160,9 +167,6 @@ class PhysicsConv3D(nn.Module):
             self.parameterization = parameterization_type(
                 physical_decoder.n_basis_components,
                 lineshape_kernel_size=lineshape_kernel_size,
-                maximum_metabolite_frequency_shift_hz=(
-                    maximum_metabolite_frequency_shift_hz
-                ),
                 **parameterization_kwargs,
             )
         elif self.lineshape_model == "global_voigt" and parameter_means is None:

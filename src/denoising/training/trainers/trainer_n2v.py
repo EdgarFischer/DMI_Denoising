@@ -110,6 +110,43 @@ def _restrict_to_physics_denoising_window(inp, tgt, mask, model):
     mask = mask.to(device=inp.device) * window.to(dtype=mask.dtype)
     return inp, mask
 
+
+def physics_parameter_regularization(output, sampling_mask, spectral_axis, cfg):
+    """Return shift/FWHM priors using no held-out spectral target values."""
+    zero = output.reconstruction.new_zeros(())
+    if cfg is None or not cfg.enabled:
+        return zero, zero
+    parameters = output.parameters
+    shifts = parameters.metabolite_frequency_shift_hz
+    fwhm = parameters.metabolite_lorentzian_fwhm_hz
+    if shifts is None or fwhm is None:
+        raise ValueError("Parameter priors require the LCModel-kernel parameterization")
+
+    # Dataset N2V masks are already intersected with the spatial brain mask.
+    # Collapse channel and frequency, leaving (B, X, Y).
+    frequency_dim = int(spectral_axis) + 2
+    voxel_mask = sampling_mask.bool().any(dim=1).any(dim=frequency_dim - 1)
+    if not bool(voxel_mask.any()):
+        return zero, zero
+    shift_z2 = ((shifts - cfg.shift_mean_hz) / cfg.shift_std_hz).square()
+    fwhm_z2 = ((fwhm - cfg.fwhm_mean_hz) / cfg.fwhm_std_hz).square()
+    return shift_z2[voxel_mask].mean(), fwhm_z2[voxel_mask].mean()
+
+
+def physics_parameter_squared_sums(output, sampling_mask, spectral_axis):
+    """Return per-metabolite physical squared sums and included voxel count."""
+    frequency_dim = int(spectral_axis) + 2
+    voxel_mask = sampling_mask.bool().any(dim=1).any(dim=frequency_dim - 1)
+    shifts = output.parameters.metabolite_frequency_shift_hz
+    fwhm = output.parameters.metabolite_lorentzian_fwhm_hz
+    if shifts is None or fwhm is None or not bool(voxel_mask.any()):
+        return None, None, 0
+    return (
+        shifts[voxel_mask].square().sum(dim=0),
+        fwhm[voxel_mask].square().sum(dim=0),
+        int(voxel_mask.sum().item()),
+    )
+
 def get_rng_state():
     state = {
         "python_random_state": random.getstate(),
@@ -287,6 +324,24 @@ def train(
             int(model.denoising_frequency_mask.numel()),
         )
 
+    regularization_cfg = getattr(cfg, "parameter_regularization", None)
+    regularization_enabled = bool(
+        regularization_cfg is not None and regularization_cfg.enabled
+    )
+    if regularization_enabled and cfg.model.architecture != "physics_conv3d":
+        raise ValueError("Parameter regularization is only supported by physics_conv3d")
+    if regularization_enabled:
+        logger.info(
+            "[regularization] shift: weight=%g, mean=%g Hz, std=%g Hz; "
+            "FWHM: weight=%g, mean=%g Hz, std=%g Hz",
+            regularization_cfg.shift_weight,
+            regularization_cfg.shift_mean_hz,
+            regularization_cfg.shift_std_hz,
+            regularization_cfg.fwhm_weight,
+            regularization_cfg.fwhm_mean_hz,
+            regularization_cfg.fwhm_std_hz,
+        )
+
     optim = torch.optim.Adam(model.parameters(), lr=cfg.optim.lr)
 
     def lr_lambda(epoch: int):
@@ -385,6 +440,9 @@ def train(
         # ---- TRAIN ----
         model.train()
         running = 0.0
+        running_data = running_shift = running_fwhm = 0.0
+        train_shift_squares = train_fwhm_squares = None
+        train_parameter_voxels = 0
 
         for inp, tgt, mask_n2v in train_loader:
             inp = inp.to(device, non_blocking=True)
@@ -397,12 +455,38 @@ def train(
                     inp, tgt, mask, model
                 )
                 inp_masked = inp * (1 - mask)
-                loss = masked_mse_loss(model(inp_masked), tgt, mask)
+                model_output = model(
+                    inp_masked, return_parameters=regularization_enabled
+                )
+                reconstruction = (
+                    model_output.reconstruction
+                    if regularization_enabled else model_output
+                )
+                data_loss = masked_mse_loss(reconstruction, tgt, mask)
+                regularization_mask = mask
             else:
                 inp, mask_n2v = _restrict_to_physics_denoising_window(
                     inp, tgt, mask_n2v, model
                 )
-                loss = masked_mse_loss(model(inp), tgt, mask_n2v)
+                model_output = model(inp, return_parameters=regularization_enabled)
+                reconstruction = (
+                    model_output.reconstruction
+                    if regularization_enabled else model_output
+                )
+                data_loss = masked_mse_loss(reconstruction, tgt, mask_n2v)
+                regularization_mask = mask_n2v
+
+            shift_prior, fwhm_prior = physics_parameter_regularization(
+                model_output, regularization_mask, model.spectral_axis,
+                regularization_cfg,
+            ) if regularization_enabled else (
+                data_loss.new_zeros(()), data_loss.new_zeros(())
+            )
+            loss = (
+                data_loss
+                + (regularization_cfg.shift_weight * shift_prior if regularization_enabled else 0.0)
+                + (regularization_cfg.fwhm_weight * fwhm_prior if regularization_enabled else 0.0)
+            )
 
             optim.zero_grad()
             loss.backward()
@@ -410,12 +494,41 @@ def train(
             optim.step()
 
             running += loss.item() * inp.size(0)
+            running_data += data_loss.item() * inp.size(0)
+            running_shift += shift_prior.item() * inp.size(0)
+            running_fwhm += fwhm_prior.item() * inp.size(0)
+            if regularization_enabled:
+                shift_squares, fwhm_squares, parameter_voxels = (
+                    physics_parameter_squared_sums(
+                        model_output, regularization_mask, model.spectral_axis
+                    )
+                )
+                if parameter_voxels:
+                    train_shift_squares = (
+                        shift_squares if train_shift_squares is None
+                        else train_shift_squares + shift_squares
+                    )
+                    train_fwhm_squares = (
+                        fwhm_squares if train_fwhm_squares is None
+                        else train_fwhm_squares + fwhm_squares
+                    )
+                    train_parameter_voxels += parameter_voxels
 
         avg_train = running / len(train_loader.dataset)
+        avg_train_data = running_data / len(train_loader.dataset)
+        avg_train_shift = running_shift / len(train_loader.dataset)
+        avg_train_fwhm = running_fwhm / len(train_loader.dataset)
+        shift_weight = regularization_cfg.shift_weight if regularization_enabled else 0.0
+        fwhm_weight = regularization_cfg.fwhm_weight if regularization_enabled else 0.0
+        avg_train_shift_weighted = shift_weight * avg_train_shift
+        avg_train_fwhm_weighted = fwhm_weight * avg_train_fwhm
 
         # ---- VALID ----
         model.eval()
         running = 0.0
+        running_data = running_shift = running_fwhm = 0.0
+        val_shift_squares = val_fwhm_squares = None
+        val_parameter_voxels = 0
         with torch.no_grad():
             for inp, tgt, mask_n2v in val_loader:
                 inp = inp.to(device, non_blocking=True)
@@ -428,36 +541,131 @@ def train(
                         inp, tgt, mask, model
                     )
                     inp_masked = inp * (1 - mask)
-                    loss = masked_mse_loss(model(inp_masked), tgt, mask)
+                    model_output = model(
+                        inp_masked, return_parameters=regularization_enabled
+                    )
+                    reconstruction = (
+                        model_output.reconstruction
+                        if regularization_enabled else model_output
+                    )
+                    data_loss = masked_mse_loss(reconstruction, tgt, mask)
+                    regularization_mask = mask
                 else:
                     inp, mask_n2v = _restrict_to_physics_denoising_window(
                         inp, tgt, mask_n2v, model
                     )
-                    loss = masked_mse_loss(model(inp), tgt, mask_n2v)
+                    model_output = model(inp, return_parameters=regularization_enabled)
+                    reconstruction = (
+                        model_output.reconstruction
+                        if regularization_enabled else model_output
+                    )
+                    data_loss = masked_mse_loss(reconstruction, tgt, mask_n2v)
+                    regularization_mask = mask_n2v
+
+                shift_prior, fwhm_prior = physics_parameter_regularization(
+                    model_output, regularization_mask, model.spectral_axis,
+                    regularization_cfg,
+                ) if regularization_enabled else (
+                    data_loss.new_zeros(()), data_loss.new_zeros(())
+                )
+                loss = (
+                    data_loss
+                    + (regularization_cfg.shift_weight * shift_prior if regularization_enabled else 0.0)
+                    + (regularization_cfg.fwhm_weight * fwhm_prior if regularization_enabled else 0.0)
+                )
 
                 running += loss.item() * inp.size(0)
+                running_data += data_loss.item() * inp.size(0)
+                running_shift += shift_prior.item() * inp.size(0)
+                running_fwhm += fwhm_prior.item() * inp.size(0)
+                if regularization_enabled:
+                    shift_squares, fwhm_squares, parameter_voxels = (
+                        physics_parameter_squared_sums(
+                            model_output, regularization_mask, model.spectral_axis
+                        )
+                    )
+                    if parameter_voxels:
+                        val_shift_squares = (
+                            shift_squares if val_shift_squares is None
+                            else val_shift_squares + shift_squares
+                        )
+                        val_fwhm_squares = (
+                            fwhm_squares if val_fwhm_squares is None
+                            else val_fwhm_squares + fwhm_squares
+                        )
+                        val_parameter_voxels += parameter_voxels
 
         avg_val = running / len(val_loader.dataset)
+        avg_val_data = running_data / len(val_loader.dataset)
+        avg_val_shift = running_shift / len(val_loader.dataset)
+        avg_val_fwhm = running_fwhm / len(val_loader.dataset)
+        avg_val_shift_weighted = shift_weight * avg_val_shift
+        avg_val_fwhm_weighted = fwhm_weight * avg_val_fwhm
+
+        epsilon = 1e-12
+        train_shift_percent = 100.0 * avg_train_shift_weighted / max(avg_train_data, epsilon)
+        train_fwhm_percent = 100.0 * avg_train_fwhm_weighted / max(avg_train_data, epsilon)
+        val_shift_percent = 100.0 * avg_val_shift_weighted / max(avg_val_data, epsilon)
+        val_fwhm_percent = 100.0 * avg_val_fwhm_weighted / max(avg_val_data, epsilon)
 
         scheduler.step()
         current_lr = scheduler.get_last_lr()[0]
 
         logger.info(
-            f"Epoch {epoch:03d} · train={avg_train:.4e} · val={avg_val:.4e} · lr={current_lr:.2e}"
+            "Epoch %03d · train_total=%.4e · train_n2s=%.4e · "
+            "train_shift_reg=%.4e (%.2f%%) · train_fwhm_reg=%.4e (%.2f%%) · "
+            "val_total=%.4e · val_n2s=%.4e · "
+            "val_shift_reg=%.4e (%.2f%%) · val_fwhm_reg=%.4e (%.2f%%) · "
+            "raw_priors[train_shift=%.4e,train_fwhm=%.4e,"
+            "val_shift=%.4e,val_fwhm=%.4e] · lr=%.2e",
+            epoch, avg_train, avg_train_data,
+            avg_train_shift_weighted, train_shift_percent,
+            avg_train_fwhm_weighted, train_fwhm_percent,
+            avg_val, avg_val_data,
+            avg_val_shift_weighted, val_shift_percent,
+            avg_val_fwhm_weighted, val_fwhm_percent,
+            avg_train_shift, avg_train_fwhm, avg_val_shift, avg_val_fwhm,
+            current_lr,
         )
-        print(f"[Ep {epoch:03d}] train={avg_train:.4e} val={avg_val:.4e}")
+        if regularization_enabled and val_parameter_voxels:
+            train_shift_rms = (train_shift_squares / train_parameter_voxels).sqrt()
+            train_fwhm_rms = (train_fwhm_squares / train_parameter_voxels).sqrt()
+            val_shift_rms = (val_shift_squares / val_parameter_voxels).sqrt()
+            val_fwhm_rms = (val_fwhm_squares / val_parameter_voxels).sqrt()
+            logger.info(
+                "Epoch %03d · per_metabolite_RMS_Hz · %s",
+                epoch,
+                " · ".join(
+                    f"{name}[shift train/val={train_shift_rms[i]:.3f}/"
+                    f"{val_shift_rms[i]:.3f}, fwhm train/val="
+                    f"{train_fwhm_rms[i]:.3f}/{val_fwhm_rms[i]:.3f}]"
+                    for i, name in enumerate(model.basis_names)
+                ),
+            )
+        print(
+            f"[Ep {epoch:03d}] train={avg_train:.4e} "
+            f"(n2s={avg_train_data:.4e}, shift={avg_train_shift_weighted:.2e}/"
+            f"{train_shift_percent:.1f}%, fwhm={avg_train_fwhm_weighted:.2e}/"
+            f"{train_fwhm_percent:.1f}%) val={avg_val:.4e} "
+            f"(n2s={avg_val_data:.4e}, shift={avg_val_shift_weighted:.2e}/"
+            f"{val_shift_percent:.1f}%, fwhm={avg_val_fwhm_weighted:.2e}/"
+            f"{val_fwhm_percent:.1f}%)"
+        )
         rng_state = get_rng_state()
 
         # ---- Checkpoints ----
-        if avg_val < best_val:
-            best_val = avg_val
+        # Keep model selection comparable to pure N2S runs: priors do not
+        # decide which checkpoint is best.
+        if avg_val_data < best_val:
+            best_val = avg_val_data
             torch.save(
                 {
                     "epoch": epoch,
                     "model_state": model.state_dict(),
                     "optimizer_state": optim.state_dict(),
                     "scheduler_state": scheduler.state_dict(),
-                    "val_loss": avg_val,
+                    "val_loss": avg_val_data,
+                    "val_total_loss": avg_val,
                     "best_val": best_val,
                     "rng_state": rng_state,
                     "self_supervised_mode": self_mode,
@@ -472,7 +680,8 @@ def train(
                 "model_state": model.state_dict(),
                 "optimizer_state": optim.state_dict(),
                 "scheduler_state": scheduler.state_dict(),
-                "val_loss": avg_val,
+                "val_loss": avg_val_data,
+                "val_total_loss": avg_val,
                 "best_val": best_val,
                 "rng_state": rng_state,
                 "self_supervised_mode": self_mode,

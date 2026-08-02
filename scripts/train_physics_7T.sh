@@ -8,8 +8,8 @@ WORKSPACE_ROOT="$(cd -- "${PROJECT_ROOT}/.." && pwd)"
 
 CONFIG_PATH="${PROJECT_ROOT}/configs/train_physics_7T.yaml"
 LOG_DIR="${PROJECT_ROOT}/logs"
-LOG_FILE="${LOG_DIR}/PhysicsConv3D_7T_N2V_forDBaseline_SoftplusFWHM.log"
-PID_FILE="${LOG_DIR}/PhysicsConv3D_7T_N2V_forDBaseline_SoftplusFWHM.pid"
+LOG_FILE="${LOG_DIR}/PhysicsConv3D_7T_N2V_HealthyActive16_LCModelPriors.log"
+PID_FILE="${LOG_DIR}/PhysicsConv3D_7T_N2V_HealthyActive16_LCModelPriors.pid"
 
 # Use the active environment, otherwise the known WALINET environment. This
 # avoids silently falling back to /usr/bin/python3 without hlsvdpropy.
@@ -33,11 +33,17 @@ fi
     echo "Project: ${PROJECT_ROOT}"
     echo "Config:  ${CONFIG_PATH}"
     echo "Python:  ${PYTHON}"
-    echo "Run:     PhysicsConv3D_7T_N2V_forDBaseline_SoftplusFWHM_MS_180"
+    echo "Run:     PhysicsConv3D_7T_N2V_HealthyActive16_LCModelPriors_MS_180"
     echo "Data:    MS_180 / OriginalData/data_after_walinet.npy"
     echo "Baseline: forD 9 complex cubic B-splines (18 coefficients)"
     echo "Scale:    0.34802767666497547 (forD -> Denoising units)"
     echo "FWHM:     softplus (positive, unbounded, no logarithmic damping)"
+    echo "Metabolite shifts: linear Hz (unbounded, no tanh saturation)"
+    echo "Scaling:  shift 0 +/- 1 Hz; FWHM 5 +/- 2.5 Hz (z coordinates)"
+    echo "Priors:   LCModel-style relative shift 0 +/- 0.2 Hz; extra FWHM 0 +/- 1 Hz"
+    echo "Loss:     masked N2V MSE + 0.01 * each parameter-prior term"
+    echo "Basis:    16 Healthy-active components, including Glc and TwoHG"
+    echo "Start:    new random network (no resume/pretraining)"
     echo
 } > "${LOG_FILE}"
 

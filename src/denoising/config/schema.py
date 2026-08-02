@@ -99,7 +99,10 @@ class PhysicsCfg:
     parameter_head_weight_std: float = 1e-3
     lineshape_model: str = "global_voigt"
     lineshape_kernel_size: int = 23
-    maximum_metabolite_frequency_shift_hz: float = 5.0
+    metabolite_shift_mean_hz: float = 0.0
+    metabolite_shift_std_hz: float = 1.0
+    metabolite_fwhm_mean_hz: float = 5.0
+    metabolite_fwhm_std_hz: float = 2.5
     baseline_n_splines: int = 0
     baseline_ppm_range: Optional[Tuple[float, float]] = None
     baseline_conjugate_subject_signals: bool = False
@@ -126,6 +129,17 @@ class OptimCfg:
 
 
 @dataclass(frozen=True)
+class ParameterRegularizationCfg:
+    enabled: bool = False
+    shift_weight: float = 0.0
+    shift_mean_hz: float = 0.0
+    shift_std_hz: float = 1.0
+    fwhm_weight: float = 0.0
+    fwhm_mean_hz: float = 5.0
+    fwhm_std_hz: float = 2.5
+
+
+@dataclass(frozen=True)
 class InferenceCfg:
     patch_strides: Tuple[Optional[int], ...]
     weight_mode: str = "hann"
@@ -139,6 +153,7 @@ class Config:
     mask: MaskCfg
     model: ModelCfg
     optim: OptimCfg
+    parameter_regularization: Optional[ParameterRegularizationCfg] = None
     inference: Optional[InferenceCfg] = None
     resume_training: bool = False
     resume_ckpt: str = ""

@@ -128,9 +128,10 @@ def build_model(cfg, sample_shape: tuple[int, ...]) -> nn.Module:
             hz_per_ppm=physics.hz_per_ppm,
             lineshape_model=physics.lineshape_model,
             lineshape_kernel_size=physics.lineshape_kernel_size,
-            maximum_metabolite_frequency_shift_hz=(
-                physics.maximum_metabolite_frequency_shift_hz
-            ),
+            metabolite_shift_mean_hz=physics.metabolite_shift_mean_hz,
+            metabolite_shift_std_hz=physics.metabolite_shift_std_hz,
+            metabolite_fwhm_mean_hz=physics.metabolite_fwhm_mean_hz,
+            metabolite_fwhm_std_hz=physics.metabolite_fwhm_std_hz,
             baseline_n_splines=physics.baseline_n_splines,
             baseline_ppm_range=physics.baseline_ppm_range,
             baseline_conjugate_subject_signals=(
