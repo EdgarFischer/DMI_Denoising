@@ -75,29 +75,38 @@ def main(cfg, config_path: str | None = None):
         raise ValueError(f"Unknown training_mode: {cfg.training_mode!r}")
 
     # ------------------------------------------------------------------
-    # 5) Build masking transform based on cfg.mask.masked_axes
+    # 5) Build the optional blind-spot transform. PHIVE mode deliberately
+    #    ignores the complete masking section and reconstructs its input.
     # ------------------------------------------------------------------
-    from denoising.data.transforms import StratifiedAxisMasking
+    if cfg.phive_mode:
+        transform_train = None
+        transform_val = None
+        print(
+            "[phive] enabled: no spectral corruption; full-spectrum "
+            "input with supervised reconstruction MSE in the physics ppm window"
+        )
+    else:
+        from denoising.data.transforms import StratifiedAxisMasking
 
-    m = cfg.mask
-    print(
-        f"[mask] masked_axes={m.masked_axes} "
-        f"mask_fraction={m.mask_fraction} window_size={m.window_size}"
-    )
-
-    if len(m.masked_axes) not in (1, 2, 3):
-        raise ValueError(
-            f"mask.masked_axes must contain 1, 2 or 3 axes, got {m.masked_axes}"
+        m = cfg.mask
+        print(
+            f"[mask] masked_axes={m.masked_axes} "
+            f"mask_fraction={m.mask_fraction} window_size={m.window_size}"
         )
 
-    transform_train = StratifiedAxisMasking(
-        mask_fraction=m.mask_fraction,
-        window_size=m.window_size,
-    )
-    transform_val = StratifiedAxisMasking(
-        mask_fraction=m.mask_fraction,
-        window_size=m.window_size,
-    )
+        if len(m.masked_axes) not in (1, 2, 3):
+            raise ValueError(
+                f"mask.masked_axes must contain 1, 2 or 3 axes, got {m.masked_axes}"
+            )
+
+        transform_train = StratifiedAxisMasking(
+            mask_fraction=m.mask_fraction,
+            window_size=m.window_size,
+        )
+        transform_val = StratifiedAxisMasking(
+            mask_fraction=m.mask_fraction,
+            window_size=m.window_size,
+        )
 
     # 6) Import trainer
     from denoising.training.trainers.trainer_n2v import train as train_func

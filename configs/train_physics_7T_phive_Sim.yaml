@@ -1,8 +1,10 @@
-# Full 7T training for the physics model with the exact forD spline baseline.
+# PHIVE-style 7T control: reconstruct the unchanged noisy input with direct
+# direct MSE in the configured ppm interval. No N2V/N2S corruption or
+# blind-spot loss is used.
 # MS_180 has global shape (X, Y, Z, F) = (64, 64, 33, 558).
 
 run:
-  name: MS_180_N2S_GlobalVoigt_SigmaAfter100_NoGlcNoTwoHG
+  name: Sim_AllReg_0001
   base_dir: trained_models
   gpu: "1"
   seed: 42
@@ -11,27 +13,27 @@ run:
 resume_training: false
 resume_ckpt: ""
 
-# false: normal blind-spot N2V training. If true, the masking section is
-# ignored and the unchanged input is reconstructed with direct MSE inside
-# model.physics.denoising_ppm_range.
-phive_mode: false
+# If true, the complete `masking` section is ignored. Input and target are
+# identical and the data loss covers model.physics.denoising_ppm_range in
+# valid brain voxels. Set false to restore the normal N2V behavior.
+phive_mode: true
 
 # PHIVE-compatible reconstruction scaling. For each voxel, sigma is estimated
 # from the current complex residual magnitude inside 1.8-4.2 ppm without
-# gradients. The existing masked N2S/N2V mean data term is divided by sigma^2.
+# gradients. The existing masked mean data term is then divided by sigma^2.
 physics_data_loss:
   residual_variance_scaling: true
   residual_std_epsilon: 1.0e-8
-  residual_variance_warmup_epochs: 100
+  residual_variance_warmup_epochs: 0
 
 data:
-  base_dir: datasets/Proton/7T/B0corrected_wo_LipidMask
-  data_filename: OriginalData/data_after_walinet.npy
-  spatial_mask_filename: masks/brain_mask.npy
+  base_dir: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/MRSISimulator/simulations
+  data_filename: simulation_fid_noisy.npy
+  spatial_mask_filename: brain_mask.npy
 
   # Full WALINET 7T training/validation split.
   train:
-    - MS_180
+    - Simulation_SNR9/realization_000
     #- Vol4_Brisbane
     #- Vol5_Brisbane
     #- Vol6_Brisbane
@@ -44,7 +46,7 @@ data:
     #- Vol8
     #- Vol9
   val:
-    - MS_180
+    - Simulation_SNR9/realization_000
     #- Vol1_Brisbane
     #- Vol1_London
 
@@ -66,7 +68,7 @@ data:
   # Existing Denoising behavior: normalize each subject in the FID domain
   # by its maximum absolute value before FFT. This is suitable for the first
   # training; quantitative amplitude rescaling will be handled later.
-  normalization: true
+  normalization: false
 
   view_sampling:
     enabled: false
@@ -104,9 +106,8 @@ patching:
   patch_sizes: [16, 16, null]
 
 masking:
-  # Mask spectral positions; real and imaginary values are replaced jointly.
-  # The Dataset intersects this N2V mask with the subject's brain mask, so
-  # background pixels never contribute to the loss.
+  # Ignored while phive_mode is true; retained only so the same file can be
+  # switched back to N2V by changing the single flag above.
   masked_axes: [2]
   mask_fraction: 0.1
   window_size: 3
@@ -122,14 +123,15 @@ model:
     simulation_config: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/walinet/configs/Simulation/7T_on_the_fly_558.yaml
     basis_dataset: clean_fid
     # Exact enabled basis-component set of Metabos_healthy_7T_2sigma.yaml.
-    # Non-tumor/MS basis: TwoHG is deliberately excluded.
+    # Non-tumor/MS basis: TwoHG is deliberately excluded because physiological
+    # 2HG is below in-vivo MRS detectability and strongly overlaps other bases.
     active_metabolites_only: false
     basis_components:
-      [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu]
+      [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu, Glc]
     # Hybrid scaling: reuse calibrated Z-score scales for amplitudes and the
     # retained global shift/phase parameters. New per-metabolite lineshape
     # parameters and the normalized kernel remain directly constrained.
-    parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_healthy_active_no_twohg.json
+    parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_simulation_gt.json
     denoising_ppm_range: [1.8, 4.2]
     ppm_reference: 4.65
     hz_per_ppm: 297.222931
@@ -177,9 +179,8 @@ model:
   # linear 9+9 coefficient forD cubic B-spline model above.
 
 parameter_regularization:
-  # Keep this section enabled only for the unchanged baseline-curvature term.
-  # Global Voigt parameters are already represented in calibrated Z-score
-  # coordinates and receive no explicit shift/FWHM penalty.
+  # One common alpha for the five global Voigt nuisance Z scores: frequency
+  # shift, Lorentz FWHM, Gaussian FWHM, phase 0 and phase 1.
   enabled: true
   shift_weight: 0.0
   shift_mean_hz: 0.0
@@ -188,14 +189,14 @@ parameter_regularization:
   fwhm_mean_hz: 0.0
   fwhm_std_hz: 1.0
   kernel_curvature_weight: 0.0
-  # Calibrated post hoc on the trained epoch-500 PHIVE reference model:
-  # Strong curvature-only penalty; baseline amplitude itself remains unrestricted.
-  baseline_curvature_weight: 1000000
+  voigt_nuisance_weight: 0.001
+  # Calibrate once from the logged raw term: lambda = 0.05*data/raw_baseline.
+  baseline_curvature_weight: 100000000
 
 optim:
   lr: 0.0005
   factor: 0.5
-  step_size: 50
+  step_size: 100
   min_lr: 0.00002
   epochs: 1000
 

@@ -14,6 +14,7 @@ from .parameterization import (
     MinimalPhysicalParameterization,
     StandardizedLCModelKernelParameterization,
     StandardizedPhysicalParameterization,
+    StandardizedVoigtBaselineParameterization,
 )
 from .parameters import SpectralParameters
 
@@ -174,14 +175,30 @@ class PhysicsConv3D(nn.Module):
                 physical_decoder.n_basis_components
             )
         elif self.lineshape_model == "global_voigt":
-            self.parameterization = StandardizedPhysicalParameterization(
-                physical_decoder.n_basis_components,
-                parameter_means,
-                parameter_stds,
-                teacher_to_model_amplitude_scale=(
-                    teacher_to_model_amplitude_scale
-                ),
-            )
+            if baseline_n_splines:
+                self.parameterization = StandardizedVoigtBaselineParameterization(
+                    physical_decoder.n_basis_components,
+                    parameter_means,
+                    parameter_stds,
+                    teacher_to_model_amplitude_scale=(
+                        teacher_to_model_amplitude_scale
+                    ),
+                    baseline_n_splines=baseline_n_splines,
+                    baseline_ford_to_model_scale=baseline_ford_to_model_scale,
+                    baseline_real_mean=baseline_real_mean,
+                    baseline_real_std=baseline_real_std,
+                    baseline_imag_mean=baseline_imag_mean,
+                    baseline_imag_std=baseline_imag_std,
+                )
+            else:
+                self.parameterization = StandardizedPhysicalParameterization(
+                    physical_decoder.n_basis_components,
+                    parameter_means,
+                    parameter_stds,
+                    teacher_to_model_amplitude_scale=(
+                        teacher_to_model_amplitude_scale
+                    ),
+                )
         else:
             raise ValueError(
                 "lineshape_model must be 'global_voigt' or 'lcmodel_kernel'."
@@ -452,6 +469,10 @@ class PhysicsConv3D(nn.Module):
                         amplitudes, lorentzian_fwhm_hz
                     )
                 )
+                if self.parameterization.baseline_n_splines:
+                    sections = self.parameterization._sections
+                    final_layer.weight[sections["baseline_real"]].zero_()
+                    final_layer.weight[sections["baseline_imag"]].zero_()
                 return
             if isinstance(
                 self.parameterization, StandardizedPhysicalParameterization
@@ -462,6 +483,12 @@ class PhysicsConv3D(nn.Module):
                         dtype=final_layer.bias.dtype,
                     )
                 )
+                baseline_n_splines = getattr(
+                    self.parameterization, "baseline_n_splines", 0
+                )
+                if baseline_n_splines:
+                    baseline_start = self.parameterization.base_parameter_count
+                    final_layer.weight[baseline_start:].zero_()
                 return
             amplitudes = self._initial_amplitudes(
                 reconstruction_rms=reconstruction_rms,

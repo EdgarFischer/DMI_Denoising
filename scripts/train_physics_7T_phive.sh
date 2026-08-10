@@ -6,14 +6,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 WORKSPACE_ROOT="$(cd -- "${PROJECT_ROOT}/.." && pwd)"
 
-CONFIG_PATH="${PROJECT_ROOT}/configs/train_physics_7T.yaml"
+CONFIG_PATH="${PROJECT_ROOT}/configs/train_physics_7T_phive.yaml"
 LOG_DIR="${PROJECT_ROOT}/logs"
-RUN_NAME="MS_180_N2S_GlobalVoigt_SigmaAfter100_NoGlcNoTwoHG"
+RUN_NAME="MS_180_Phive_GlobalVoigt_Sigma_AllNuisanceZReg001_OldStats_NoGlcNoTwoHG"
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
 PID_FILE="${LOG_DIR}/${RUN_NAME}.pid"
 
-# Use the active environment, otherwise the known WALINET environment. This
-# avoids silently falling back to /usr/bin/python3 without hlsvdpropy.
 if [[ -n "${VIRTUAL_ENV:-}" && -x "${VIRTUAL_ENV}/bin/python" ]]; then
     PYTHON="${VIRTUAL_ENV}/bin/python"
 elif [[ -x "/home/hfischer/venvs/walinet/bin/python" ]]; then
@@ -30,23 +28,25 @@ if [[ ! -f "${CONFIG_PATH}" ]]; then
 fi
 
 {
-    echo "[$(date --iso-8601=seconds)] Starting PhysicsConv3D 7T global-Voigt + exact forD baseline N2S"
+    echo "[$(date --iso-8601=seconds)] Starting regularized PhysicsConv3D 7T PHIVE control"
     echo "Project: ${PROJECT_ROOT}"
     echo "Config:  ${CONFIG_PATH}"
     echo "Python:  ${PYTHON}"
     echo "Run:     ${RUN_NAME}"
     echo "Data:    MS_180 / OriginalData/data_after_walinet.npy"
-    echo "Baseline: forD 9 complex cubic B-splines (18 coefficients)"
-    echo "Scale:    0.34802767666497547 (forD -> Denoising units)"
+    echo "Input:   unchanged noisy spectrum"
+    echo "Target:  identical full spectrum"
+    echo "Loss:    |residual|^2 / sigma^2 from epoch 1; plain MSE logged separately"
+    echo "Sigma:   per voxel std_f(|prediction-target|), detached (PHIVE-style)"
+    echo "Context: encoder still receives the complete spectrum"
+    echo "Masking: N2V/N2S masking disabled; masking config ignored"
     echo "Lineshape: one global shift + global Lorentz/Gauss FWHM per voxel"
     echo "Metabolite-specific shifts/FWHM: disabled"
-    echo "Priors:   no shift/FWHM penalty; calibrated global Z-score coordinates"
-    echo "Curvature: no kernel; complex 9-spline baseline=1000000"
-    echo "Baseline init: exactly zero physical real/imaginary coefficients"
-    echo "Loss:     epochs 1-100 plain masked MSE; from 101 |residual|^2 / sigma^2"
-    echo "Sigma:    per voxel std_f(|prediction-target|), detached (PHIVE-style)"
+    echo "Nuisance prior: 0.01 * sum(z^2) for global shift, Lorentz/Gauss FWHM, phase 0/1"
+    echo "Nuisance statistics: original Vol1_Brisbane calibrated values"
     echo "Basis:    14 components; Glc and TwoHG disabled"
-    echo "Start:    new random network (no resume/pretraining)"
+    echo "Curvature: kernel=0; complex 9-spline baseline=1000000"
+    echo "Baseline init: exactly zero physical real/imaginary coefficients"
     echo
 } > "${LOG_FILE}"
 
@@ -62,7 +62,7 @@ echo "${PID}" > "${PID_FILE}"
 
 sleep 1
 if kill -0 "${PID}" 2>/dev/null; then
-    echo "Training started with PID ${PID}"
+    echo "PHIVE control training started with PID ${PID}"
     echo "Log: ${LOG_FILE}"
     echo "Follow: tail -f ${LOG_FILE}"
 else

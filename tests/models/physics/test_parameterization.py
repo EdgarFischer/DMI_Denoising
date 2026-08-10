@@ -5,6 +5,7 @@ from denoising.models.physics.parameterization import (
     LCModelKernelParameterization,
     StandardizedLCModelKernelParameterization,
     StandardizedPhysicalParameterization,
+    StandardizedVoigtBaselineParameterization,
 )
 
 
@@ -81,6 +82,58 @@ def test_standardized_physical_roundtrip_has_finite_gradients():
     assert torch.isfinite(raw.grad).all()
 
 
+def test_standardized_voigt_baseline_decodes_global_widths_and_zero_baseline():
+    means = (0.2, 0.1, 4.0, 12.0, 8.0, -0.2, 0.001)
+    stds = (0.05, 0.02, 2.0, 3.0, 2.0, 0.4, 0.0002)
+    layer = StandardizedVoigtBaselineParameterization(
+        2,
+        means,
+        stds,
+        baseline_n_splines=3,
+        baseline_ford_to_model_scale=0.35,
+        baseline_real_mean=(4.0, -1.0, 0.5),
+        baseline_real_std=(5.0, 1.5, 0.7),
+        baseline_imag_mean=(-1.2, 0.2, 4.1),
+        baseline_imag_std=(4.8, 0.8, 4.9),
+    )
+    raw = layer.raw_at_population_mean()[None, :, None, None]
+    parameters = layer(raw)
+    z = layer.standardized_maps(raw)
+
+    assert layer.n_output_parameters == 13
+    torch.testing.assert_close(
+        parameters.lorentzian_fwhm_hz,
+        torch.full((1, 1, 1), 12.0), atol=1e-5, rtol=0,
+    )
+    torch.testing.assert_close(
+        parameters.gaussian_fwhm_hz,
+        torch.full((1, 1, 1), 8.0), atol=1e-5, rtol=0,
+    )
+    torch.testing.assert_close(
+        parameters.baseline_coefficients_real,
+        torch.zeros(1, 1, 1, 3), atol=2e-7, rtol=0,
+    )
+    torch.testing.assert_close(
+        parameters.baseline_coefficients_imag,
+        torch.zeros(1, 1, 1, 3), atol=2e-7, rtol=0,
+    )
+    torch.testing.assert_close(
+        z[:, : layer.base_parameter_count],
+        torch.zeros_like(z[:, : layer.base_parameter_count]),
+        atol=1e-5,
+        rtol=0,
+    )
+    real_section, imag_section = layer._baseline_sections
+    torch.testing.assert_close(
+        raw[0, real_section, 0, 0],
+        -layer.baseline_real_mean / layer.baseline_real_std,
+    )
+    torch.testing.assert_close(
+        raw[0, imag_section, 0, 0],
+        -layer.baseline_imag_mean / layer.baseline_imag_std,
+    )
+
+
 def test_teacher_conversion_scales_only_amplitudes():
     layer = StandardizedPhysicalParameterization(
         2,
@@ -153,6 +206,34 @@ def test_lcmodel_lineshape_coordinates_are_standardized_at_initial_point():
     torch.testing.assert_close(
         fwhm_grad[:, layer._sections["metabolite_lorentz"]],
         torch.full((1, 2, 1, 1), 2.5), atol=1e-5, rtol=0,
+    )
+
+
+def test_lcmodel_kernel_baseline_initializes_at_exactly_zero():
+    layer = LCModelKernelParameterization(
+        2,
+        lineshape_kernel_size=23,
+        baseline_n_splines=3,
+        baseline_ford_to_model_scale=0.35,
+        baseline_real_mean=(4.0, -1.0, 0.5),
+        baseline_real_std=(5.0, 1.5, 0.7),
+        baseline_imag_mean=(-1.2, 0.2, 4.1),
+        baseline_imag_std=(4.8, 0.8, 4.9),
+    )
+    raw = layer.raw_at_initial_values(torch.tensor([0.2, 0.3]), 5.0)
+    parameters = layer(raw[None, :, None, None])
+
+    torch.testing.assert_close(
+        parameters.baseline_coefficients_real,
+        torch.zeros(1, 1, 1, 3),
+        atol=2e-7,
+        rtol=0,
+    )
+    torch.testing.assert_close(
+        parameters.baseline_coefficients_imag,
+        torch.zeros(1, 1, 1, 3),
+        atol=2e-7,
+        rtol=0,
     )
 
 

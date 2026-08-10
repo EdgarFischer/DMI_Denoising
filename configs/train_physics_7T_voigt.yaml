@@ -1,0 +1,106 @@
+# N2S ablation with the simple forD-style global Voigt parameterization.
+# Existing LCModel-kernel configurations remain unchanged.
+run:
+  name: MS_180_N2S_GlobalVoigt_NoReg
+  base_dir: trained_models
+  gpu: "2"
+  seed: 42
+
+resume_training: false
+resume_ckpt: ""
+phive_mode: false
+
+data:
+  base_dir: datasets/Proton/7T/B0corrected_wo_LipidMask
+  data_filename: OriginalData/data_after_walinet.npy
+  spatial_mask_filename: masks/brain_mask.npy
+  train: [MS_180]
+  val: [MS_180]
+  image_axes: [0, 1, 3]
+  spectral_axis: 2
+  channel_axis: null
+  fourier_axes: [3]
+  num_samples: 2000
+  val_samples: 400
+  normalization: true
+  view_sampling:
+    enabled: false
+    views: []
+
+augmentation:
+  enabled: true
+  global_phase: {enabled: true, p: 1.0}
+  permutation: {enabled: false, p: 0.0, axes: []}
+  inversion: {enabled: false, p: 0.0, axes: []}
+  global_scale: {enabled: false, p: 0.0, min: 1.0, max: 1.0}
+
+patching:
+  enabled: true
+  patch_sizes: [16, 16, null]
+
+masking:
+  masked_axes: [2]
+  mask_fraction: 0.1
+  window_size: 3
+
+model:
+  architecture: physics_conv3d
+  features: [8, 16, 24, 32, 48, 64]
+  physics:
+    simulation_config: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/walinet/configs/Simulation/7T_on_the_fly_558.yaml
+    basis_dataset: clean_fid
+    active_metabolites_only: false
+    basis_components: [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu, Glc]
+
+    # Includes Z statistics for amplitudes, global frequency shift,
+    # global Lorentz/Gauss FWHM, phase 0 and phase 1.
+    parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_healthy_active_no_twohg.json
+    denoising_ppm_range: [1.8, 4.2]
+    ppm_reference: 4.65
+    hz_per_ppm: 297.222931
+
+    spectral_strides: [2, 2, 2, 2, 2, 2]
+    spectral_kernel_size: 5
+    spatial_kernel_size: 3
+    parameter_head_hidden_channels: 128
+    initial_reconstruction_rms: 0.25
+    initial_lorentzian_fwhm_hz: 5.0
+    initial_gaussian_fwhm_hz: 3.0
+    parameter_head_weight_std: 0.02
+
+    # forD-style: one global Lorentz and one global Gaussian width per voxel.
+    # No flexible kernel, individual shifts, or individual broadening.
+    lineshape_model: global_voigt
+
+    # Preserve the exact existing complex forD baseline and its calibration.
+    baseline_n_splines: 9
+    baseline_ppm_range: [1.8, 4.1]
+    baseline_conjugate_subject_signals: true
+    baseline_ford_to_model_scale: 0.34802767666497547
+    baseline_coefficient_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/ford_baseline_stats_7T_MS180.json
+
+parameter_regularization:
+  enabled: true
+  # Global Voigt widths are Z-scaled, not explicitly penalized.
+  shift_weight: 0.0
+  shift_mean_hz: 0.0
+  shift_std_hz: 1.0
+  fwhm_weight: 0.0
+  fwhm_mean_hz: 0.0
+  fwhm_std_hz: 1.0
+  kernel_curvature_weight: 0.0
+  # Same baseline curvature regularization as the existing runs.
+  baseline_curvature_weight: 0
+
+optim:
+  lr: 0.0005
+  factor: 0.5
+  step_size: 50
+  min_lr: 0.00002
+  epochs: 1000
+  batch_size: 200
+  num_workers: 0
+
+inference:
+  patch_strides: [8, 8, null]
+  weight_mode: hann

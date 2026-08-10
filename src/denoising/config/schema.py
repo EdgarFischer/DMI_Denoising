@@ -137,6 +137,16 @@ class ParameterRegularizationCfg:
     fwhm_weight: float = 0.0
     fwhm_mean_hz: float = 5.0
     fwhm_std_hz: float = 2.5
+    kernel_curvature_weight: float = 0.0
+    baseline_curvature_weight: float = 0.0
+    voigt_nuisance_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class PhysicsDataLossCfg:
+    residual_variance_scaling: bool = False
+    residual_std_epsilon: float = 1e-8
+    residual_variance_warmup_epochs: int = 0
 
 
 @dataclass(frozen=True)
@@ -154,7 +164,9 @@ class Config:
     model: ModelCfg
     optim: OptimCfg
     parameter_regularization: Optional[ParameterRegularizationCfg] = None
+    physics_data_loss: Optional[PhysicsDataLossCfg] = None
     inference: Optional[InferenceCfg] = None
     resume_training: bool = False
     resume_ckpt: str = ""
     training_mode: str = "n2v"
+    phive_mode: bool = False

@@ -210,6 +210,16 @@ class LCModelKernelParameterization(nn.Module):
         kernel_logits = amplitudes.new_full((self.lineshape_kernel_size,), -2.0)
         kernel_logits[self.lineshape_kernel_size // 2] = 2.0
         raw[sections["kernel"]] = kernel_logits
+        if self.baseline_n_splines:
+            # Keep the population standard deviations as well-conditioned
+            # output coordinates, but initialize the physical baseline at
+            # exactly zero rather than at the (forD-derived) population mean.
+            raw[sections["baseline_real"]] = (
+                -self.baseline_real_mean / self.baseline_real_std
+            ).to(device=raw.device, dtype=raw.dtype)
+            raw[sections["baseline_imag"]] = (
+                -self.baseline_imag_mean / self.baseline_imag_std
+            ).to(device=raw.device, dtype=raw.dtype)
         return raw
 
     def forward(self, raw: Tensor) -> SpectralParameters:
@@ -406,11 +416,11 @@ class StandardizedPhysicalParameterization(nn.Module):
     def _inverse_softplus(value: Tensor) -> Tensor:
         return value + torch.log(-torch.expm1(-value))
 
-    def standardized_maps(self, raw: Tensor) -> Tensor:
-        """Return constrained Z coordinates in channel-first layout."""
-        if raw.ndim != 4 or raw.shape[1] != self.n_output_parameters:
+    def _standardized_base_maps(self, raw: Tensor) -> Tensor:
+        expected = self.n_basis_components + 5
+        if raw.ndim != 4 or raw.shape[1] != expected:
             raise ValueError(
-                f"Expected raw shape (B, {self.n_output_parameters}, X, Y), "
+                f"Expected raw shape (B, {expected}, X, Y), "
                 f"found {tuple(raw.shape)}."
             )
         mean = self.parameter_mean[None, :, None, None]
@@ -435,8 +445,12 @@ class StandardizedPhysicalParameterization(nn.Module):
         ) / std[:, fwhm_indices]
         return z
 
+    def standardized_maps(self, raw: Tensor) -> Tensor:
+        """Return constrained Z coordinates in channel-first layout."""
+        return self._standardized_base_maps(raw)
+
     def physical_channels(self, raw: Tensor) -> Tensor:
-        z = self.standardized_maps(raw)
+        z = self._standardized_base_maps(raw)
         return (
             z * self.parameter_std[None, :, None, None]
             + self.parameter_mean[None, :, None, None]
@@ -480,4 +494,133 @@ class StandardizedPhysicalParameterization(nn.Module):
             gaussian_fwhm_hz=physical[:, n + 2],
             zero_order_phase_radians=physical[:, n + 3],
             first_order_phase_rad_per_hz=physical[:, n + 4],
+        )
+
+
+class StandardizedVoigtBaselineParameterization(
+    StandardizedPhysicalParameterization
+):
+    """Global standardized Voigt model with the exact complex forD baseline.
+
+    The first ``n_basis + 5`` channels retain the existing in-vivo Z-score
+    convention.  In particular, the two global Voigt widths are decoded from
+    standardized coordinates to Lorentzian and Gaussian FWHM in Hz.  The
+    additional baseline channels use their own forD coefficient statistics.
+    """
+
+    def __init__(
+        self,
+        n_basis_components: int,
+        means: tuple[float, ...],
+        stds: tuple[float, ...],
+        *,
+        teacher_to_model_amplitude_scale: float = 1.0,
+        baseline_n_splines: int,
+        baseline_ford_to_model_scale: float,
+        baseline_real_mean: tuple[float, ...],
+        baseline_real_std: tuple[float, ...],
+        baseline_imag_mean: tuple[float, ...],
+        baseline_imag_std: tuple[float, ...],
+    ) -> None:
+        super().__init__(
+            n_basis_components,
+            means,
+            stds,
+            teacher_to_model_amplitude_scale=teacher_to_model_amplitude_scale,
+        )
+        self.baseline_n_splines = int(baseline_n_splines)
+        if self.baseline_n_splines < 1:
+            raise ValueError("baseline_n_splines must be >= 1.")
+        if not torch.isfinite(torch.tensor(baseline_ford_to_model_scale)):
+            raise ValueError("baseline_ford_to_model_scale must be finite.")
+        if baseline_ford_to_model_scale <= 0:
+            raise ValueError("baseline_ford_to_model_scale must be > 0.")
+        self.register_buffer(
+            "baseline_ford_to_model_scale",
+            torch.tensor(float(baseline_ford_to_model_scale)),
+        )
+        statistics = {
+            "real_mean": baseline_real_mean,
+            "real_std": baseline_real_std,
+            "imag_mean": baseline_imag_mean,
+            "imag_std": baseline_imag_std,
+        }
+        for name, values in statistics.items():
+            if len(values) != self.baseline_n_splines:
+                raise ValueError(
+                    f"Baseline {name} length must match baseline_n_splines."
+                )
+            tensor = torch.tensor(values, dtype=torch.float32)
+            if not torch.isfinite(tensor).all():
+                raise ValueError(f"Baseline {name} must be finite.")
+            if name.endswith("std") and not torch.all(tensor > 0):
+                raise ValueError(f"Baseline {name} must be positive.")
+            self.register_buffer(f"baseline_{name}", tensor)
+
+    @property
+    def base_parameter_count(self) -> int:
+        return self.n_basis_components + 5
+
+    @property
+    def n_output_parameters(self) -> int:
+        return self.base_parameter_count + 2 * self.baseline_n_splines
+
+    @property
+    def _baseline_sections(self) -> tuple[slice, slice]:
+        start = self.base_parameter_count
+        return (
+            slice(start, start + self.baseline_n_splines),
+            slice(
+                start + self.baseline_n_splines,
+                start + 2 * self.baseline_n_splines,
+            ),
+        )
+
+    def standardized_maps(self, raw: Tensor) -> Tensor:
+        if raw.ndim != 4 or raw.shape[1] != self.n_output_parameters:
+            raise ValueError(
+                f"Expected raw shape (B, {self.n_output_parameters}, X, Y), "
+                f"found {tuple(raw.shape)}."
+            )
+        # Baseline head outputs already are standardized coordinates.
+        return torch.cat(
+            (
+                self._standardized_base_maps(raw[:, : self.base_parameter_count]),
+                raw[:, self.base_parameter_count :],
+            ),
+            dim=1,
+        )
+
+    def raw_at_population_mean(self) -> Tensor:
+        raw = self.parameter_mean.new_zeros(self.n_output_parameters)
+        raw[: self.base_parameter_count] = super().raw_at_population_mean()
+        real_section, imag_section = self._baseline_sections
+        # Preserve the existing convention: initialize the physical baseline
+        # at exactly zero, while retaining its population-standardized scale.
+        raw[real_section] = -self.baseline_real_mean / self.baseline_real_std
+        raw[imag_section] = -self.baseline_imag_mean / self.baseline_imag_std
+        return raw
+
+    def forward(self, raw: Tensor) -> SpectralParameters:
+        base = super().forward(raw[:, : self.base_parameter_count])
+        real_section, imag_section = self._baseline_sections
+        baseline_real = (
+            raw[:, real_section]
+            * self.baseline_real_std[None, :, None, None]
+            + self.baseline_real_mean[None, :, None, None]
+        ) * self.baseline_ford_to_model_scale
+        baseline_imag = (
+            raw[:, imag_section]
+            * self.baseline_imag_std[None, :, None, None]
+            + self.baseline_imag_mean[None, :, None, None]
+        ) * self.baseline_ford_to_model_scale
+        return SpectralParameters(
+            amplitudes=base.amplitudes,
+            frequency_shift_hz=base.frequency_shift_hz,
+            lorentzian_fwhm_hz=base.lorentzian_fwhm_hz,
+            gaussian_fwhm_hz=base.gaussian_fwhm_hz,
+            zero_order_phase_radians=base.zero_order_phase_radians,
+            first_order_phase_rad_per_hz=base.first_order_phase_rad_per_hz,
+            baseline_coefficients_real=baseline_real.movedim(1, -1),
+            baseline_coefficients_imag=baseline_imag.movedim(1, -1),
         )

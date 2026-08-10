@@ -15,6 +15,7 @@ from .schema import (
     PhysicsCfg,
     OptimCfg,
     InferenceCfg,
+    PhysicsDataLossCfg,
 )
 
 def validate_config(cfg: Config) -> None:
@@ -68,7 +69,7 @@ def validate_config(cfg: Config) -> None:
             )
     
     # --- masking ---
-    if not (0.0 < cfg.mask.mask_fraction <= 1.0):
+    if not cfg.phive_mode and not (0.0 < cfg.mask.mask_fraction <= 1.0):
         raise ValueError("mask.mask_fraction must be in (0, 1].")
 
     # --- augmentation ---
@@ -342,13 +343,56 @@ def build_config(raw: dict) -> Config:
             fwhm_weight=float(regularization_raw.get("fwhm_weight", 0.0)),
             fwhm_mean_hz=float(regularization_raw.get("fwhm_mean_hz", 5.0)),
             fwhm_std_hz=float(regularization_raw.get("fwhm_std_hz", 2.5)),
+            kernel_curvature_weight=float(
+                regularization_raw.get("kernel_curvature_weight", 0.0)
+            ),
+            baseline_curvature_weight=float(
+                regularization_raw.get("baseline_curvature_weight", 0.0)
+            ),
+            voigt_nuisance_weight=float(
+                regularization_raw.get("voigt_nuisance_weight", 0.0)
+            ),
         )
         if parameter_regularization.shift_std_hz <= 0:
             raise ValueError("parameter_regularization.shift_std_hz must be > 0")
         if parameter_regularization.fwhm_std_hz <= 0:
             raise ValueError("parameter_regularization.fwhm_std_hz must be > 0")
-        if parameter_regularization.shift_weight < 0 or parameter_regularization.fwhm_weight < 0:
+        if (
+            parameter_regularization.shift_weight < 0
+            or parameter_regularization.fwhm_weight < 0
+            or parameter_regularization.kernel_curvature_weight < 0
+            or parameter_regularization.baseline_curvature_weight < 0
+            or parameter_regularization.voigt_nuisance_weight < 0
+        ):
             raise ValueError("parameter regularization weights must be >= 0")
+
+    physics_data_loss_raw = raw.get("physics_data_loss")
+    physics_data_loss = None
+    if physics_data_loss_raw is not None:
+        physics_data_loss = PhysicsDataLossCfg(
+            residual_variance_scaling=bool(
+                physics_data_loss_raw.get("residual_variance_scaling", False)
+            ),
+            residual_std_epsilon=float(
+                physics_data_loss_raw.get("residual_std_epsilon", 1e-8)
+            ),
+            residual_variance_warmup_epochs=int(
+                physics_data_loss_raw.get("residual_variance_warmup_epochs", 0)
+            ),
+        )
+        if physics_data_loss.residual_std_epsilon <= 0:
+            raise ValueError("physics_data_loss.residual_std_epsilon must be > 0")
+        if physics_data_loss.residual_variance_warmup_epochs < 0:
+            raise ValueError(
+                "physics_data_loss.residual_variance_warmup_epochs must be >= 0"
+            )
+        if (
+            physics_data_loss.residual_variance_scaling
+            and model.architecture != "physics_conv3d"
+        ):
+            raise ValueError(
+                "Residual-variance scaling is only supported by physics_conv3d."
+            )
 
     cfg = Config(
         run=run,
@@ -359,10 +403,12 @@ def build_config(raw: dict) -> Config:
         model=model,
         optim=optim,
         parameter_regularization=parameter_regularization,
+        physics_data_loss=physics_data_loss,
         inference=inference,
         resume_training=bool(raw.get("resume_training", False)),
         resume_ckpt=str(raw.get("resume_ckpt", "")),
         training_mode=str(raw.get("training_mode", "n2v")),
+        phive_mode=bool(raw.get("phive_mode", False)),
     )
 
     validate_config(cfg)

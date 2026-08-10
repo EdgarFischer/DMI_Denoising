@@ -1,0 +1,101 @@
+# PHIVE control on the SNR-9 simulation using amplitude coordinates calibrated
+# to the exact globally normalized simulation coefficient maps.
+run:
+  name: Simulation_SNR9_PHIVE_GTStats
+  base_dir: trained_models
+  gpu: "2"
+  seed: 42
+
+resume_training: false
+resume_ckpt: ""
+phive_mode: true
+
+data:
+  base_dir: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/MRSISimulator/simulations
+  data_filename: simulation_fid_noisy.npy
+  spatial_mask_filename: brain_mask.npy
+  train: [Simulation_SNR9/realization_000]
+  val: [Simulation_SNR9/realization_000]
+  image_axes: [0, 1, 3]
+  spectral_axis: 2
+  channel_axis: null
+  fourier_axes: [3]
+  num_samples: 2000
+  val_samples: 400
+  # Simulation_GT and its coefficient maps already share one global clean-FID
+  # normalization. Preserve that scale during this controlled experiment.
+  normalization: false
+  view_sampling: {enabled: false, views: []}
+
+augmentation:
+  enabled: false
+  global_phase: {enabled: false, p: 0.0}
+  permutation: {enabled: false, p: 0.0, axes: []}
+  inversion: {enabled: false, p: 0.0, axes: []}
+  global_scale: {enabled: false, p: 0.0, min: 1.0, max: 1.0}
+
+patching:
+  enabled: true
+  patch_sizes: [16, 16, null]
+
+masking:
+  # Ignored in PHIVE mode.
+  masked_axes: [2]
+  mask_fraction: 0.1
+  window_size: 3
+
+model:
+  architecture: physics_conv3d
+  features: [8, 16, 24, 32, 48, 64]
+  physics:
+    simulation_config: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/walinet/configs/Simulation/7T_on_the_fly_558.yaml
+    basis_dataset: clean_fid
+    active_metabolites_only: false
+    basis_components: [Asp, Cr, GABA, GPC, GSH, Gln, Ins, NAAG, NAA, PCh, PCr, Scyllo, Tau, Glu, Glc]
+    parameter_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/physics_parameter_stats_7T_simulation_gt.json
+    denoising_ppm_range: [1.8, 4.2]
+    ppm_reference: 4.65
+    hz_per_ppm: 297.222931
+    spectral_strides: [2, 2, 2, 2, 2, 2]
+    spectral_kernel_size: 5
+    spatial_kernel_size: 3
+    parameter_head_hidden_channels: 128
+    initial_reconstruction_rms: 0.25
+    initial_lorentzian_fwhm_hz: 5.0
+    initial_gaussian_fwhm_hz: 3.0
+    parameter_head_weight_std: 0.02
+    lineshape_model: lcmodel_kernel
+    lineshape_kernel_size: 23
+    metabolite_shift_mean_hz: 0.0
+    metabolite_shift_std_hz: 1.0
+    metabolite_fwhm_mean_hz: 5.0
+    metabolite_fwhm_std_hz: 2.5
+    baseline_n_splines: 9
+    baseline_ppm_range: [1.8, 4.1]
+    baseline_conjugate_subject_signals: true
+    baseline_ford_to_model_scale: 0.34802767666497547
+    baseline_coefficient_statistics_path: /ceph/mri.meduniwien.ac.at/departments/radiology/mrsbrain/public/hfish/Denoising/configs/ford_baseline_stats_7T_MS180.json
+
+parameter_regularization:
+  enabled: true
+  shift_weight: 0.001
+  shift_mean_hz: 0.0
+  shift_std_hz: 0.2
+  fwhm_weight: 0.001
+  fwhm_mean_hz: 0.0
+  fwhm_std_hz: 1.0
+  kernel_curvature_weight: 0.0
+  baseline_curvature_weight: 1000000
+
+optim:
+  lr: 0.0005
+  factor: 0.5
+  step_size: 100
+  min_lr: 0.00002
+  epochs: 1000
+  batch_size: 200
+  num_workers: 0
+
+inference:
+  patch_strides: [8, 8, null]
+  weight_mode: hann
