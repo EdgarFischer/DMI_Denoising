@@ -4,9 +4,9 @@
 # MS_180 has global shape (X, Y, Z, F) = (64, 64, 33, 558).
 
 run:
-  name: Sim_AllReg_0001
+  name: Sim_N2S_AllReg_0001
   base_dir: trained_models
-  gpu: "1"
+  gpu: "2"
   seed: 42
 
 # Deliberately train a completely new network; no pretrained or resumed state.
@@ -16,7 +16,7 @@ resume_ckpt: ""
 # If true, the complete `masking` section is ignored. Input and target are
 # identical and the data loss covers model.physics.denoising_ppm_range in
 # valid brain voxels. Set false to restore the normal N2V behavior.
-phive_mode: true
+phive_mode: false
 
 # PHIVE-compatible reconstruction scaling. For each voxel, sigma is estimated
 # from the current complex residual magnitude inside 1.8-4.2 ppm without

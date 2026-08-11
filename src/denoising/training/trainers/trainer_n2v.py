@@ -421,9 +421,38 @@ def train(
     if self_mode == "n2v":
         try:
             _, _, mask_dbg = next(iter(train_loader))
-            logger.info(
-                f"[DEBUG] N2V mask shape {tuple(mask_dbg.shape)}, mean {mask_dbg.float().mean():.4f}"
-            )
+            global_mask_fraction = mask_dbg.float().mean().item()
+
+            if spatial_mask_filename is not None:
+                # The N2V mask has already been intersected with the spatial
+                # support mask by MRSiNDataset. Recover which spatial locations
+                # are valid by collapsing channel and configured masked axes,
+                # then evaluate the fraction only inside that support. Network
+                # tensors have shape (B, C, *image_axes), while masked_axes are
+                # indexed relative to image_axes.
+                collapse_dims = tuple(
+                    sorted({1, *(2 + int(axis) for axis in masked_axes)})
+                )
+                valid_spatial = mask_dbg.bool().any(dim=collapse_dims)
+                values_per_valid_location = 1
+                for dim in collapse_dims:
+                    values_per_valid_location *= int(mask_dbg.shape[dim])
+                valid_count = int(valid_spatial.sum().item()) * values_per_valid_location
+                inside_mask_fraction = (
+                    float(mask_dbg.sum().item()) / valid_count
+                    if valid_count > 0
+                    else float("nan")
+                )
+                logger.info(
+                    f"[DEBUG] N2V mask shape {tuple(mask_dbg.shape)}, "
+                    f"fraction_inside_spatial_mask={inside_mask_fraction:.4f}, "
+                    f"global_mean={global_mask_fraction:.4f}"
+                )
+            else:
+                logger.info(
+                    f"[DEBUG] N2V mask shape {tuple(mask_dbg.shape)}, "
+                    f"fraction={global_mask_fraction:.4f}"
+                )
         except StopIteration:
             logger.warning("[DEBUG] Train Loader leer – keine Maske.")
         except Exception as e:

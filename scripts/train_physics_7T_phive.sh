@@ -8,7 +8,7 @@ WORKSPACE_ROOT="$(cd -- "${PROJECT_ROOT}/.." && pwd)"
 
 CONFIG_PATH="${PROJECT_ROOT}/configs/train_physics_7T_phive.yaml"
 LOG_DIR="${PROJECT_ROOT}/logs"
-RUN_NAME="MS_180_Phive_GlobalVoigt_Sigma_AllNuisanceZReg001_OldStats_NoGlcNoTwoHG"
+RUN_NAME="MS_180_N2S_AllReg0001"
 LOG_FILE="${LOG_DIR}/${RUN_NAME}.log"
 PID_FILE="${LOG_DIR}/${RUN_NAME}.pid"
 

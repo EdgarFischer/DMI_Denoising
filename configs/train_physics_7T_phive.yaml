@@ -4,7 +4,7 @@
 # MS_180 has global shape (X, Y, Z, F) = (64, 64, 33, 558).
 
 run:
-  name: MS_180_Phive_AllReg0001
+  name: MS_180_N2S_AllReg0001
   base_dir: trained_models
   gpu: "3"
   seed: 42
@@ -16,7 +16,7 @@ resume_ckpt: ""
 # If true, the complete `masking` section is ignored. Input and target are
 # identical and the data loss covers model.physics.denoising_ppm_range in
 # valid brain voxels. Set false to restore the normal N2V behavior.
-phive_mode: true
+phive_mode: false
 
 # PHIVE-compatible reconstruction scaling. For each voxel, sigma is estimated
 # from the current complex residual magnitude inside 1.8-4.2 ppm without
@@ -189,7 +189,7 @@ parameter_regularization:
   fwhm_mean_hz: 0.0
   fwhm_std_hz: 1.0
   kernel_curvature_weight: 0.0
-  voigt_nuisance_weight: 0.001
+  voigt_nuisance_weight: 0.01
   # Calibrate once from the logged raw term: lambda = 0.05*data/raw_baseline.
   baseline_curvature_weight: 100000000
 

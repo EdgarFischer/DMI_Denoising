@@ -13,7 +13,7 @@ phive_mode: false
 data:
   base_dir: datasets/Proton/7T/B0corrected_wo_LipidMask
   data_filename: OriginalData/data_after_walinet.npy
-  spatial_mask_filename: masks/brain_mask.npy
+  spatial_mask_filename: null #masks/brain_mask.npy
   train: [MS_180]
   val: [MS_180]
   image_axes: [0, 1, 3]
